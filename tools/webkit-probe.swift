@@ -13,6 +13,12 @@
 //
 // The JavaScript file's last expression is what gets printed. Default is a
 // layout report: viewport, the two name sizes, and every box that can overflow.
+//
+// PROBE_INJECT=<file> adds a script at document start, before the page runs a
+// line of its own. That is the only way to watch something that happens over
+// time here: the report above is evaluated once, so anything that has to drive
+// the page and collect as it goes goes in the injected script, leaves what it
+// found on window, and the report reads it back at the end.
 
 import AppKit
 import WebKit
@@ -71,7 +77,13 @@ final class Probe: NSObject, WKNavigationDelegate {
 
     override init() {
         let frame = NSRect(x: 0, y: 0, width: w, height: h)
-        web = WKWebView(frame: frame, configuration: WKWebViewConfiguration())
+        let config = WKWebViewConfiguration()
+        if let path = ProcessInfo.processInfo.environment["PROBE_INJECT"],
+           let src = try? String(contentsOfFile: path, encoding: .utf8) {
+            config.userContentController.addUserScript(
+                WKUserScript(source: src, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        web = WKWebView(frame: frame, configuration: config)
         // A window, because a view outside one lays out at zero and paints
         // nothing.
         //

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import WebKit
 
@@ -23,7 +24,33 @@ struct PilotPage: UIViewRepresentable {
     /// every relative path it already uses resolves inside the bundle.
     static let scheme = "impkt"
 
+    /// The drill is guided by sound and by nothing else, so the ringer switch
+    /// must not be able to turn it off.
+    ///
+    /// A WKWebView's audio goes out on this process's audio session, and the
+    /// default category is `.ambient`: it obeys the silent switch and it ducks
+    /// under anything else that is playing. A pilot who left the switch on would
+    /// get a drill with no beat and no reason for it, which reads as broken
+    /// firmware rather than as a switch on the side of the phone. `.playback` is
+    /// the category for audio that is the point of the app.
+    ///
+    /// `mixWithOthers`, because a boxer training to their own music should keep
+    /// it. The cues sit on top; they are short, and they are what is loud.
+    private func openTheSpeaker() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback, mode: .default, options: [.mixWithOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            // Nothing to do about it and nothing to tell the pilot: the drill
+            // still runs, and on a phone with the switch off it still sounds.
+            NSLog("IMPKT: audio session refused: \(error)")
+        }
+    }
+
     func makeUIView(context: Context) -> WKWebView {
+        openTheSpeaker()
+
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         config.setURLSchemeHandler(BundleFiles(), forURLScheme: PilotPage.scheme)

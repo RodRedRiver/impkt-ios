@@ -1494,15 +1494,14 @@
     .run-mark.miss { color: var(--red-deep); }
     .run-mark b { font-weight: 600; font-style: normal; }
 
-    /* The two controls that exist while a drill is running, and only two. A row
-       of five buttons on a drill screen is five things to read at the moment
-       there is nothing to read: one turns the voice off, one gets you out, and
-       everything else a pilot might want mid-drill is a key on the keyboard
-       (P pauses, X flags the last rep, space logs a punch) for whoever is
-       driving a session from a laptop.
+    /* The one control that exists while a drill is running. A row of buttons on
+       a drill screen is a row of things to read at the moment there is nothing to
+       read: this one gets you out, and everything else a pilot might want
+       mid-drill is a key on the keyboard (P pauses, X flags the last rep, space
+       logs a punch) for whoever is driving a session from a laptop.
 
-       Quieter and smaller than a button anywhere else on the site, because
-       neither of these is the thing to press. */
+       Quieter and smaller than a button anywhere else on the site, because it is
+       not the thing to press. */
     .run-ctl {
       display: flex; gap: 10px;
       width: 100%; max-width: 900px; margin-top: 16px;
@@ -1513,7 +1512,6 @@
       font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
       white-space: nowrap;
     }
-    .run-ctl .btn-plain[aria-pressed="false"] { color: var(--ash); }
     /* Paused is a state of the whole screen, not a word in a corner. The stage
        goes quiet and the instruction stays exactly where it was, because what
        you were doing is what you go back to. */
@@ -2216,14 +2214,12 @@
 
       <ol class="run-list" id="run-list"></ol>
 
-      <!-- Two, while a drill is running. The voice is the one thing about this
-           screen somebody actually changes their mind about halfway through, and
-           the other is the way out. Pausing and flagging a rep are still here as
-           keys, P and X, for a session driven from a laptop; they are not
-           buttons because a row of five pills is five things to read at the one
+      <!-- One, while a drill is running: the way out. There was a Voice on button
+           beside it and there is no voice any more. Pausing and flagging a rep are
+           still here as keys, P and X, for a session driven from a laptop; they are
+           not buttons because a row of pills is a row of things to read at the one
            moment there is nothing to read. -->
       <div class="run-ctl" id="run-ctl" hidden>
-        <button class="btn-plain" type="button" id="run-voice" aria-pressed="true">Voice on</button>
         <button class="btn-plain" type="button" id="run-exit">Exit drill</button>
       </div>
 
@@ -2329,6 +2325,16 @@
     if (!audio && (window.AudioContext || window.webkitAudioContext)) {
       audio = new (window.AudioContext || window.webkitAudioContext)();
     }
+    /* Resumed as well as created, and this is not belt and braces. A context is
+       suspended by the browser whenever it feels entitled to, which on iOS
+       includes coming back from a locked screen or another app, and a suspended
+       context accepts every call below and makes no sound at all. Since the voice
+       went there is nothing else telling the pilot when to throw, so a silent
+       drill is not a degraded drill, it is no drill. Called from inside a press
+       both times, which is the only moment resuming is allowed to work. */
+    if (audio && audio.state === 'suspended') {
+      audio.resume().catch(() => { /* refused: it is not a gesture after all */ });
+    }
   }
   /* vol is here for the metronome in the guided run, which is the same click at
      a fraction of the level: a tempo tick as loud as the landing click would be
@@ -2426,137 +2432,41 @@
     body.connect(bg).connect(out); body.start(t); body.stop(t + 0.03);
   }
 
-  /* ── 2b. THE VOICE IN YOUR EAR ────────────────────────
+  /* ── 2b. WHAT YOU HEAR ────────────────────────────────
      A drill read off a screen is a drill nobody is doing: for the next twelve
      minutes the pilot is four feet away with both hands wrapped and their eyes
-     on a bag, so the guidance has to arrive through the ear. Four things do
-     that, and the division of labour between them is the whole design.
+     on a bag, so the guidance has to arrive through the ear. Everything that
+     arrives that way is a cue synthesised here, and the division of labour
+     between them is the whole design.
 
-       · SPEECH says WHICH punch, and it is never the timing. Synthesis latency
-         is somewhere between 100 and 500ms depending on the platform and the
-         voice, so the name is spoken into the gap BEFORE the beat and has
-         finished by the time the beat lands.
        · THE CLICK says WHEN, scheduled on the audio clock. It is the T0 every
          reaction on this page is measured from, and it is the click the rest of
          the site already uses, a fraction louder.
+       · A RISING PAIR at a block boundary says the screen has changed. The
+         screen says how. A sound cannot, and pretending otherwise is most of
+         what was wrong with the voice.
+       · A SINGLE MID TONE in the gap before a beat says that beat is asking for
+         something different from the last one. Where a block alternates two
+         punches the two get different pitches, so after one look at the screen
+         the pilot can hear which of them is coming.
        · A SHORT PAIR ABOVE IT says the punch was heard and counted.
        · A LOW TONE says a beat went by with nothing thrown.
+       · THREE CLICKS are the bell, at the two ends of a round.
+
+     There was a speaking voice here and it is gone. It named the punch, which is
+     the one thing it did that a tone cannot, and it cost more than that was
+     worth: every platform hands out a different voice and half of them are
+     formant synthesisers from the 1990s, synthesis latency runs to hundreds of
+     milliseconds and varies per utterance so it can never be trusted with
+     timing, it stops the moment an iPhone locks its screen, and none of it
+     survives a gym with music on. A tone is scheduled on the audio clock to the
+     sample and sounds the same on every phone.
 
      Sound is on and stays on. It used to follow the reduced-motion preference
      and have a button beside the voice, and it has neither now: the click is the
      entire timing instruction, a drill with it muted is a drill with no beat,
      and reduced motion is a statement about movement rather than about audio. */
-  const CUE = { sound: true, voice: true, voiceObj: null, voiceLocal: null };
-
-  /* ── WHICH VOICE SAYS IT ──────────────────────────────
-     Whatever the platform offers first is almost always the worst thing it has.
-     On a Mac that is Samantha or Daniel and on an iPhone it is Samantha again,
-     formant voices from the 1990s, and hearing one of them say "jab" ninety
-     times in a twelve-minute block is its own reason to put the phone down.
-
-     Nothing in the API says which voices are the neural ones, so the choice is
-     made from what the names say plus what each platform is known to ship. It is
-     scored rather than a list of first choices, because the installed set differs
-     per machine and a list of names is a list that is wrong on the next phone.
-
-     Overridable with ?voice=serena, which is there for exactly one situation: a
-     pilot rings up to say the voice is unbearable and we want the answer to be a
-     link rather than a deploy. */
-  const VOICE_MARKED = /premium|enhanced|neural|natural|siri/i;
-  /* Apple's neural voices, which come back with nothing in the name to say so.
-     Nicky and Aaron are the Siri voices on iOS, which is the platform that
-     matters most here: they are local, they are free, and they are the reason
-     this whole function exists. */
-  const VOICE_NEURAL = new Set(['nicky', 'aaron', 'serena', 'jamie', 'arthur',
-    'martha', 'stephanie', 'oliver', 'kate', 'ava', 'zoe', 'evan', 'nathan',
-    'noelle', 'joelle', 'isha']);
-  /* Still the default on most machines, and the thing being fixed. */
-  const VOICE_OLD = new Set(['samantha', 'alex', 'daniel', 'victoria', 'agnes',
-    'vicki', 'tom', 'alice', 'moira', 'tessa', 'karen', 'fiona', 'veena',
-    'rishi', 'shelley']);
-  /* macOS will still hand Zarvox and Bubbles to any page that asks. A scoring
-     function that does not name them picks one eventually, and a drill counted
-     out by Trinoids is not a pilot study. */
-  const VOICE_JOKE = /albert|bad news|bahh|bells|boing|bruce|bubbles|cellos|deranged|good news|hysterical|jester|junior|kathy|organ|princess|ralph|superstar|trinoids|whisper|wobble|zarvox|eloquence|compact|fred|grandma|grandpa|rocko|sandy|flo\b|reed\b|eddy/i;
-  /* The errors that mean the voice never spoke, as opposed to the ones that mean
-     we cancelled it ourselves, which happens on every single rep. */
-  const VOICE_LOST = /network|synthesis-failed|synthesis-unavailable|voice-unavailable|language-unavailable/;
-
-  const voiceBase = n => n.replace(/\s*\(.*$/, '').trim();
-
-  function voiceScore(v) {
-    const n = (v.name || '').toLowerCase();
-    if (!/^en/i.test(v.lang || '')) return -1;
-    if (VOICE_JOKE.test(n)) return -1;
-    let s = 100;
-    if (/en[-_]gb/i.test(v.lang)) s += 24;              // the drill is written British
-    else if (/en[-_](us|au|ie)/i.test(v.lang)) s += 8;
-    if (VOICE_MARKED.test(n)) s += 60;
-    if (VOICE_NEURAL.has(voiceBase(n))) s += 46;
-    if (/^google /.test(n)) s += 34;                    // Chrome's own, and far better
-    if (VOICE_OLD.has(voiceBase(n))) s -= 46;
-    /* Local last, and as a nudge rather than a rule. It is worth a lot in a
-       basement with no signal, and it is not worth being read to by Daniel. */
-    if (v.localService) s += 14;
-    if (v.default) s += 2;
-    return s;
-  }
-
-  function pickVoice() {
-    if (!window.speechSynthesis) return;
-    const vs = speechSynthesis.getVoices() || [];
-    if (!vs.length) return;      // Chrome answers empty until voiceschanged fires
-    let want = '';
-    try {
-      want = (new URLSearchParams(location.search).get('voice')
-              || localStorage.getItem('impkt.pilot.voice') || '').toLowerCase();
-    } catch (err) { /* no storage, no override. The scoring still runs. */ }
-    const ranked = vs.filter(v => voiceScore(v) > 0)
-                     .sort((a, b) => voiceScore(b) - voiceScore(a));
-    /* Kept whatever else wins, as the thing to fall back to when a network voice
-       turns out not to be there. */
-    CUE.voiceLocal = ranked.find(v => v.localService) || null;
-    CUE.voiceObj = (want && vs.find(v => v.name.toLowerCase().indexOf(want) >= 0))
-                || ranked[0] || null;
-  }
-  if (window.speechSynthesis) {
-    pickVoice();
-    speechSynthesis.addEventListener('voiceschanged', pickVoice);
-  }
-
-  /* Says it, and never waits to be finished with: the run's clock does not stop
-     for a voice, and a drill that awaited speech would drift by however long the
-     platform took to talk. Cancelling first is deliberate — a name that arrives
-     a beat late is worse than a name that never arrives, because the pilot
-     throws what they heard. */
-  function speak(text) {
-    if (!CUE.voice || !text || !window.speechSynthesis) return;
-    try {
-      speechSynthesis.cancel();
-      speechSynthesis.speak(utter(text, CUE.voiceObj));
-    } catch (err) { /* no synthesis on this platform. The screen still says it. */ }
-  }
-
-  /* Natural pace, not 1.08. The rate was raised to get the name out inside the
-     gap before the beat, and it is most of what made the voice sound like a
-     tannoy: the gap is 900ms and "jab" does not need the help. */
-  function utter(text, voice) {
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1; u.pitch = 1; u.volume = 1;
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
-    /* A network voice that cannot be reached says nothing at all, and a drill
-       that has gone silent looks exactly like a drill with the voice turned off.
-       One retry on the best local voice, only for the errors that mean nothing
-       was ever spoken, and never a retry of a retry. */
-    u.onerror = e => {
-      if (!VOICE_LOST.test((e && e.error) || '')) return;
-      if (!CUE.voiceLocal || voice === CUE.voiceLocal) return;
-      CUE.voiceObj = CUE.voiceLocal;
-      try { speechSynthesis.speak(utter(text, CUE.voiceLocal)); } catch (err) { /* fine */ }
-    };
-    return u;
-  }
-  function hush() { try { speechSynthesis.cancel(); } catch (err) { /* fine */ } }
+  const CUE = { sound: true };
 
   /* The wraps are on the wrists the punches are thrown with, so a buzz is felt
      in the worst possible place to feel one. It is here for the phone in the
@@ -2588,6 +2498,32 @@
   /* Seconds out. The bell every boxer already knows, in this page's material:
      three clicks rather than a brass sample, at the level of the landing one. */
   function bell()    { [0, 0.16, 0.32].forEach(d => click(0.5, d)); buzz([70, 70, 70]); }
+
+  /* The block changed. Two tones a fifth apart, rising, low enough to be nothing
+     like an ask and long enough to be heard from four feet back over a bag. What
+     changed is on the screen; between blocks there is time to look at it. */
+  function blockChange() {
+    tone(620, 0.12, 0.16); tone(930, 0.14, 0.14, 0.11); buzz([30, 60, 30]);
+  }
+
+  /* The next beat is asking for something other than the last one. In the gap
+     before the beat, never on it, so it is never mistaken for the timing.
+
+     The pitch says which of the block's punches is coming, and that is as much as
+     a sound can honestly carry. It is a pitch per position in this block's own
+     list rather than a fixed code for jab or cross: inside a block it means "the
+     other one", and outside a block it means nothing. The screen names it, and in
+     an alternating block the name is worth reading once. */
+  const ASK_TONES = [1180, 1570, 1870];
+  function askTone(k) {
+    tone(ASK_TONES[k % ASK_TONES.length], 0.09, 0.12);
+    buzz([18]);
+  }
+
+  /* Ten seconds left in a block that is not asking for punches. A repeated note,
+     well below the asks and well above the miss, and twice so it reads as a clock
+     rather than as something to answer. */
+  function warn() { tone(470, 0.09, 0.13); tone(470, 0.09, 0.13, 0.13); buzz([25, 40, 25]); }
 
   /* ── 3. THE NAME ──────────────────────────────────────
      Set at a size that fits this window, measured rather than guessed: a
@@ -4200,7 +4136,7 @@
                 paused: false, pausedAt: 0,
                 stats: { prompted: 0, satisfied: 0, accepted: 0, missed: 0,
                          rejected: 0, flagged: 0, partial: 0, voided: 0 },
-                reps: [], iSay: 0, iGo: 0, last: null, lead: -1,
+                reps: [], iCue: 0, iGo: 0, last: null, lead: -1,
                 rts: [], lock: null };
 
   /* The class a block is collected as, in words. Lead and rear are resolved off
@@ -4212,21 +4148,14 @@
     combo_1_2: '1-2', combo_1_2_3: '1-2-3', combo_4_5: '4-5'
   };
 
-  /* What the voice says, where what it should say and what is written are not
-     the same string. A synthesiser handed "1-2" says "one minus two" or "one to
-     two" depending on the platform, and a boxer who hears either of those has
-     been told the wrong combination. Everything not in here is spoken as it is
-     written, which is most of it. */
-  const SPOKEN = {
-    combo_1_2: 'one two', combo_1_2_3: 'one two three', combo_4_5: 'four five'
-  };
-
-  /* How long before the beat the name goes out. Speech has to be finished by the
-     time the click lands, or the pilot is still being told what to throw while
-     the window they had to throw it in is running: the name is information and
-     the click is the timing, and this gap is the line between them. Held clear
-     of half the interval so a fast tempo speaks late rather than speaking over
-     the previous rep. */
+  /* How long before the beat the ask cue goes out. It has to be over by the time
+     the click lands, or the pilot is still being told what to throw while the
+     window they had to throw it in is running: the cue is information and the
+     click is the timing, and this gap is the line between them. Held clear of
+     half the interval so a fast tempo cues late rather than cueing over the
+     previous rep. It was 900ms because that is what speech needed; a tone needs
+     90ms, and the gap stays where it is because it is the pilot who needs the
+     rest of it, not the synthesiser. */
   const CUE_LEAD_MS = 900;
   /* How long a rep's window stays open after the beat. Generous, because it is
      the boundary of a label rather than a test of reflexes: a slow punch is
@@ -4257,7 +4186,7 @@
     const say = sayFor(profile());
     RUN.d = d;
     RUN.punches = 0; RUN.idx = -1; RUN.beat = -1; RUN.done = false;
-    RUN.rep = null; RUN.last = null; RUN.iSay = 0; RUN.iGo = 0;
+    RUN.rep = null; RUN.last = null; RUN.iCue = 0; RUN.iGo = 0;
     RUN.blocks = d.blocks.map(([time, text, label, kind, every, expect], i, all) => ({
       start: toSecs(time),
       end: i + 1 < all.length ? toSecs(all[i + 1][0]) : (d.secs || toSecs(time) + 60),
@@ -4274,20 +4203,24 @@
     }));
     RUN.total = RUN.blocks[RUN.blocks.length - 1].end;
 
-    /* How many reps each block asks for, and what the voice says for each one.
+    /* How many reps each block asks for, and which punch each one is for.
        Derived here rather than at the moment of asking, so the number on screen,
-       the number in the rings and the number of times the voice speaks are one
-       calculation and cannot come apart. */
+       the number in the rings and the number of cues are one calculation and
+       cannot come apart. */
     RUN.blocks.forEach(b => {
       b.reps = b.types.length ? Math.floor((b.end - b.start) / b.every) : 0;
-      b.spokenFor = n => {
-        /* Two types in a block were asked for in turn, so the voice alternates
-           with the beat rather than with the punches that arrive. This is the
-           part that has to come off the beat: driven off arrivals, one missed
-           jab shifts every label after it in the block by one, and the whole
-           block is silently mislabelled from that point on. */
-        const t = b.types.length > 1 ? b.types[n % b.types.length] : b.types[0];
-        return { type: t, name: say(PUNCH_T[t] || t), spoken: SPOKEN[t] || say(PUNCH_T[t] || t) };
+      b.askFor = n => {
+        /* Two types in a block were asked for in turn, so the ask alternates with
+           the beat rather than with the punches that arrive. This is the part that
+           has to come off the beat: driven off arrivals, one missed jab shifts
+           every label after it in the block by one, and the whole block is
+           silently mislabelled from that point on. */
+        const k = b.types.length > 1 ? n % b.types.length : 0;
+        const t = b.types[k];
+        /* k is also the cue's pitch, which is why it is carried rather than
+           recomputed: the tone the pilot hears and the label the rep is stored
+           under are the same number. */
+        return { type: t, k: k, name: say(PUNCH_T[t] || t) };
       };
     });
 
@@ -4464,8 +4397,8 @@
      asked for it, and that is trustworthy exactly as far as the ask and the
      arrival are tied together. So:
 
-       · the name is spoken into the gap before the beat, never on it, because
-         speech latency varies by hundreds of milliseconds and cannot be timing;
+       · a changed ask is cued into the gap before the beat, never on it: what the
+         cue carries is information, and only the click is timing;
        · the beat is a click scheduled on the audio clock, and it is T0;
        · a window opens on T0 and closes well before the next beat, and only what
          arrives inside it is labelled;
@@ -4481,28 +4414,29 @@
 
      The reps are laid out as one flat list for the whole drill before it starts,
      rather than being worked out inside the block that is running. A rep that is
-     spoken 900ms before it starts belongs partly to the block in front of it, and
-     a list with no block boundaries in it has nowhere for that to go wrong. */
+     cued 900ms before it starts belongs partly to the block in front of it, and a
+     list with no block boundaries in it has nowhere for that to go wrong. */
   function buildReps() {
     RUN.reps = [];
     if (!RUN.d || !RUN.d.guided) return;
     RUN.blocks.forEach((b, bi) => {
       let prev = null;
       for (let n = 0; n < b.reps; n++) {
-        const s = b.spokenFor(n);
+        const s = b.askFor(n);
         RUN.reps.push({
           at: b.start + n * b.every,      // seconds into the drill, exactly
           bi: bi, n: n, of: b.reps,
-          type: s.type, name: s.name, spoken: s.spoken,
+          type: s.type, name: s.name, k: s.k,
           expect: b.expect,
           windowMs: windowFor(b.every),
-          /* Named out loud only when the punch changes, and at the start of the
-             block. A block of ninety jabs does not need to be told "jab" ninety
-             times: after the first one the click is the whole instruction, and a
-             voice repeating a word you are already throwing is noise you learn to
-             stop hearing. A block alternating jab and cross names every single
-             rep, which is the block where the name is the point. */
-          speakIt: n === 0 || s.type !== prev,
+          /* Cued only when the punch changes, and not on the first rep of a block,
+             whose change is announced by the block cue itself. A block of ninety
+             jabs does not need ninety tones saying "still jabs": after the first
+             one the click is the whole instruction, and a cue that repeats what
+             you are already throwing is noise you learn to stop hearing. A block
+             alternating jab and cross cues every single rep, which is the block
+             where the pitch is the point. */
+          cueIt: n > 0 && s.type !== prev,
           lead: Math.min(CUE_LEAD_MS, b.every * 450) / 1000
         });
         prev = s.type;
@@ -4642,7 +4576,6 @@
     closeRep('paused');
     RUN.paused = true;
     RUN.pausedAt = performance.now();
-    hush();
     $('run-stage').classList.add('paused');
     /* Kept so it can be put back. Resuming used to leave "Paused" over the top
        of a drill that was running again until the next block came round. */
@@ -4681,25 +4614,11 @@
     catch (err) { /* fine */ }
   }
 
-  /* What the voice says when a block starts. A prompted block gets its punch and
-     its tempo and nothing else, because it is about to be followed by beats; a
-     block with nothing to throw gets its instruction in full, because the words
-     are all it has. */
-  function blockCue(b) {
-    const plain = b.text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-    if (!b.reps) return plain;
-    const s = b.spokenFor(0);
-    /* "2.5" is read as "two point five" by some voices and "two and a half" by
-       none of them, so the decimal is spelled out rather than left to the
-       synthesiser to guess at. */
-    const every = b.every % 1 ? b.every.toString().replace('.', ' point ') : b.every;
-    return s.spoken + '. One every ' + every + ' seconds.';
-  }
-
   /* How long the run waits before the first block. Long enough to get the wraps
-     up and the phone down, and it is counted out loud: a drill that starts the
-     instant a button is pressed starts with the pilot still looking at the
-     button. */
+     up and the phone down, and it is counted where a pilot four feet back can
+     have it, on the screen at the size of the whole stage and in clicks for the
+     last three: a drill that starts the instant a button is pressed starts with
+     the pilot still looking at the button. */
   const LEAD_IN_S = 5;
 
   function startRun() {
@@ -4712,7 +4631,7 @@
     RUN.t0 = performance.now() + LEAD_IN_S * 1000;
     RUN.idx = -1; RUN.beat = -1; RUN.punches = 0;
     RUN.rep = null; RUN.last = null; RUN.lead = -1;
-    RUN.iSay = 0; RUN.iGo = 0; RUN.warned = -1; RUN.rang = -1;
+    RUN.iCue = 0; RUN.iGo = 0; RUN.warned = -1; RUN.rang = -1;
     RUN.paused = false;
     RUN.stats = { prompted: 0, satisfied: 0, accepted: 0, missed: 0,
                   rejected: 0, flagged: 0, partial: 0, voided: 0 };
@@ -4729,7 +4648,6 @@
     $('run-reps').textContent = asksRead(0);
     $('run-rt').textContent = 'Not yet';
     setMark('', '');
-    speak('Drill ' + RUN.d.n.replace(/^0/, 'zero ') + '. ' + RUN.d.t + '. Ready.');
     /* A fresh recording per press of Start, with an id made here rather than by
        the server: the recording has to be identifiable while it is sitting in
        the outbox of a browser that has never reached the server. */
@@ -4753,7 +4671,6 @@
     RUN.paused = false;
     clearInterval(RUN.timer);
     RUN.timer = null;
-    hush();
     keepAwake(false);
     $('run-ctl').hidden = true;
     $('run-stage').classList.remove('paused');
@@ -4826,35 +4743,39 @@
       /* Seconds out. In the drill that is three real rounds, the two ends of a
          round are a bell and nothing else needs to say so. */
       if (RUN.d.rounds && (b.kind === 'hit' || wasRound)) bell();
-      speak(blockCue(b));
+      /* Something changed and it is on the screen. Not for the first block of the
+         drill, which the count-in has just finished announcing, and not under a
+         bell, which is already the loudest thing this page does and is saying the
+         same thing. */
+      else if (RUN.idx > 0) blockChange();
     }
 
     $('run-left').textContent = asClock(RUN.total - el);
     $('run-blk').textContent = asClock(b.end - el);
     $('run-fill').style.width = (el / RUN.total * 100).toFixed(2) + '%';
 
-    /* Ten seconds left in the block, spoken, and only in a block with no beats in
-       it. In a prompted block the reps are the structure and a voice cutting
-       across one is worse than not knowing how long is left: the pilot is
-       listening for the next punch, not for the clock. */
+    /* Ten seconds left in the block, and only in a block with no beats in it. In a
+       prompted block the reps are the structure and a cue cutting across one is
+       worse than not knowing how long is left: the pilot is listening for the next
+       punch, not for the clock. */
     if (!b.every && RUN.warned !== i && b.end - b.start >= 30 && b.end - el <= 10) {
       RUN.warned = i;
-      click(0.22);
-      speak('Ten seconds');
+      warn();
     }
 
     /* ── the asks ──
        Three passes over the flat list, each moving its own pointer forward and
-       never back: name the punch that is coming, put the beat on the audio clock
-       at the exact moment it is due, and close whatever window has run out. The
-       close comes first so a window is never open while the next one opens. */
+       never back: cue the punch that is coming if it is a different one, put the
+       beat on the audio clock at the exact moment it is due, and close whatever
+       window has run out. The close comes first so a window is never open while
+       the next one opens. */
     if (RUN.rep && el >= RUN.rep.closeAt) closeRep(false);
 
-    while (RUN.iSay < RUN.reps.length && RUN.reps[RUN.iSay].at - el <= RUN.reps[RUN.iSay].lead) {
-      const r = RUN.reps[RUN.iSay++];
-      /* Skipped if the moment it should have been said is already behind us,
-         which is what happens on the rep either side of a pause. */
-      if (r.speakIt && r.at - el > 0) speak(r.spoken);
+    while (RUN.iCue < RUN.reps.length && RUN.reps[RUN.iCue].at - el <= RUN.reps[RUN.iCue].lead) {
+      const r = RUN.reps[RUN.iCue++];
+      /* Skipped if the moment it should have been cued is already behind us, which
+         is what happens on the rep either side of a pause. */
+      if (r.cueIt && r.at - el > 0) askTone(r.k);
     }
     while (RUN.iGo < RUN.reps.length && RUN.reps[RUN.iGo].at - el <= 0.1) {
       const r = RUN.reps[RUN.iGo];
@@ -4914,7 +4835,6 @@
         + 'The recording is finished with, so it goes now.';
       setMark('', '');
       bell();
-      speak('Drill complete. Well done.');
       $('run-blk').textContent = '0:00';
       $('run-fill').style.width = '100%';
       /* The recording is closed and handed over in the same breath as the drill
@@ -5168,11 +5088,13 @@
           fastest: rts[0], slowest: rts[rts.length - 1], n: rts.length
         } : null
       },
-      /* Which voice actually spoke, because "the voice was unbearable" is a
-         report about a specific voice on a specific phone and the name is the
-         only way to know which one it was. */
-      cues: { voice: CUE.voice, sound: CUE.sound, leadInS: LEAD_IN_S,
-              voiceName: CUE.voiceObj ? CUE.voiceObj.name : null },
+      /* What the pilot was actually hearing. `voice` is kept and is false: a
+         reader comparing this session against one recorded before the voice was
+         taken out needs to know which of the two it is holding, and an absent
+         field would read as an old document rather than as a drill with no voice
+         in it. */
+      cues: { voice: false, sound: CUE.sound,
+              leadInS: LEAD_IN_S, leadMs: CUE_LEAD_MS },
       rings: Array.from(RUN.rings.values())
         .map(r => ({ type: r.t, target: r.target, done: r.done })),
       wraps: ['left', 'right'].map(side => ({
@@ -5352,16 +5274,6 @@
   /* Out, mid-drill, in one press. Same two things the back button does, put where
      it can be reached without scrolling a screen that is deliberately full. */
   $('run-exit').addEventListener('click', () => { endRun(); show(drills); });
-
-  /* A switch rather than a setting, because whether the voice is any use depends
-     on the room: it is the only thing that says which punch is next and it is
-     useless under gym music. */
-  $('run-voice').addEventListener('click', () => {
-    CUE.voice = !CUE.voice;
-    if (!CUE.voice) hush();
-    $('run-voice').textContent = CUE.voice ? 'Voice on' : 'Voice off';
-    $('run-voice').setAttribute('aria-pressed', String(CUE.voice));
-  });
 
   /* The space bar is the circle without having to aim at it. Skipped while the
      circle itself has focus, because the browser is already turning that press
