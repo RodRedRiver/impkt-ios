@@ -140,6 +140,28 @@ jobs:
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             archive
 
+      # The page loads its stylesheet, its font and the activation gate's pilot
+      # list by relative path, and a wrong path is not a build error: the app
+      # installs and shows an unstyled page that cannot check a code. Nothing in
+      # the compiler catches that, so the built bundle is inspected instead.
+      - name: Check the page's own files survived the build
+        if: steps.creds.outputs.ready == 'true'
+        run: |
+          APP=build/IMPKT.xcarchive/Products/Applications/IMPKT.app
+          fail=0
+          for f in Web/index.html css/pilot.css pilots.json firmware.zip bridge.js; do
+            if [ -f "$APP/$f" ]; then
+              echo "ok   $f"
+            else
+              echo "MISSING $f"; fail=1
+            fi
+          done
+          ls "$APP"/fonts/*.woff2 >/dev/null 2>&1 && echo "ok   fonts" \
+            || { echo "MISSING fonts"; fail=1; }
+          test -f "$APP/AppIcon60x60@2x.png" && echo "ok   icon" \
+            || echo "note: no 120px icon in the bundle, validation will say so"
+          exit $fail
+
       - name: Export the ipa
         if: steps.creds.outputs.ready == 'true'
         env:

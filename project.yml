@@ -25,10 +25,17 @@ targets:
       - path: IMPKT
         excludes:
           - "Resources/Web"
-      # A folder reference, not a group: the page is loaded as Web/index.html
-      # inside the bundle, and flattening it would break that path and any
-      # asset the page ever adds next to itself.
+          - "Resources/css"
+          - "Resources/fonts"
+      # Folder references, not groups. A group flattens its contents into the
+      # bundle root, so css/pilot.css would arrive as pilot.css and the page's
+      # own ../css/pilot.css would find nothing. The page's paths are the
+      # requirement here, and they are the website's paths.
       - path: IMPKT/Resources/Web
+        type: folder
+      - path: IMPKT/Resources/css
+        type: folder
+      - path: IMPKT/Resources/fonts
         type: folder
     dependencies:
       - package: NordicDFU
