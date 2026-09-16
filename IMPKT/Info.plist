@@ -24,6 +24,11 @@
 	     renaming a target renames the scheme the CI workflow builds. -->
 	<key>CFBundleDisplayName</key>
 	<string>Impkt Band</string>
+	<!-- Names the icon set in Assets.xcassets. Xcode injects this into a generated
+	     Info.plist but not into one of ours, and App Store validation refuses an
+	     upload without it, after the build has otherwise succeeded. -->
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<!-- Both from build settings on purpose. The workflow passes
 	     CURRENT_PROJECT_VERSION=<run number>, and a hardcoded 1 here would
 	     silently ignore it, so every upload after the first would be refused as

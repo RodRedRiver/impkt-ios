@@ -163,8 +163,18 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          # altool exits 0 after printing "UPLOAD FAILED", so its exit code alone
+          # turns a rejected build into a green tick. The output decides instead:
+          # a run is only successful if Apple actually took the build.
+          set -o pipefail
           xcrun altool --upload-app -f build/ipa/IMPKT.ipa -t ios \
-            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee upload.log
+          if grep -q "UPLOAD FAILED" upload.log; then
+            echo "::error::App Store Connect refused the build, see the errors above"
+            exit 1
+          fi
+          grep -q "No errors uploading" upload.log \
+            || { echo "::error::altool did not confirm the upload"; exit 1; }
 
       # Kept whatever happens to the upload: a build that compiled but would not
       # upload is a credentials problem, and the ipa is the proof of that rather
