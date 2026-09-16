@@ -37,6 +37,12 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<!-- Answers the export compliance question up front, which otherwise holds
+	     every TestFlight build behind a "Missing Compliance" prompt in the web
+	     interface. False is the truthful answer: the app implements no encryption
+	     of its own, and Bluetooth's own link security is the operating system's. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
