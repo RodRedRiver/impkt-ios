@@ -1,0 +1,14 @@
+# XcodeGen makes this from project.yml, so the generated project is not a source
+# file. Committing it means every build fights the other build's copy.
+IMPKT.xcodeproj/
+build/
+DerivedData/
+
+# Signing material and API keys. Nothing here is ever committed: the App Store
+# Connect key lives in a GitHub secret, and this line is the second lock.
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+
+.DS_Store

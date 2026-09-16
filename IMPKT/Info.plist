@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- What the home screen says. Matches the App Store listing, "Impkt Band",
+	     rather than the target name, which is IMPKT and stays that way because
+	     renaming a target renames the scheme the CI workflow builds. -->
+	<key>CFBundleDisplayName</key>
+	<string>Impkt Band</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<!-- Both strings, and both honest. Apple rejects a build whose Bluetooth
+	     reason is vague, and a pilot reading it deserves to know the radio is
+	     for the wraps and nothing else. -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>IMPKT connects to your wraps to record punches and to install firmware updates on them. Nothing is sent anywhere else.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>IMPKT connects to your wraps to record punches and to install firmware updates on them.</string>
+</dict>
+</plist>

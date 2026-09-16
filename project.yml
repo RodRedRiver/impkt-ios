@@ -1,0 +1,43 @@
+# XcodeGen project definition. `brew install xcodegen && xcodegen generate` turns
+# this into IMPKT.xcodeproj, which is faster and far less error prone than a
+# hand-written project file, and it means the project can be regenerated rather
+# than merged. The README has the by-hand route in Xcode as well.
+name: IMPKT
+options:
+  bundleIdPrefix: com.impktband
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  # Nordic's own iOS implementation of the DFU protocol the wraps speak. The
+  # firmware uses the legacy (SDK 11) DFU service, which this library supports
+  # alongside secure DFU, so the zip built by ./build.sh dfu-zip is what it wants.
+  NordicDFU:
+    url: https://github.com/NordicSemiconductor/IOS-DFU-Library
+    from: 4.15.0
+
+targets:
+  IMPKT:
+    type: application
+    platform: iOS
+    sources:
+      - path: IMPKT
+        excludes:
+          - "Resources/Web"
+      # A folder reference, not a group: the page is loaded as Web/index.html
+      # inside the bundle, and flattening it would break that path and any
+      # asset the page ever adds next to itself.
+      - path: IMPKT/Resources/Web
+        type: folder
+    dependencies:
+      - package: NordicDFU
+    settings:
+      base:
+        INFOPLIST_FILE: IMPKT/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.impktband.pilot
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        DEVELOPMENT_TEAM: ""   # set this in Xcode once, Signing & Capabilities

@@ -1,0 +1,405 @@
+import Foundation
+import CoreBluetooth
+
+/// One wrap the phone can currently see.
+struct FoundWrap: Identifiable, Equatable {
+    let id: UUID
+    var name: String
+    var rssi: Int
+    var seen: Date
+    var connected: Bool = false
+}
+
+/// Every Bluetooth conversation in the app goes through here: the pilot page's
+/// bridge, and the update screen's device list. One central manager, because iOS
+/// gives an app one radio and two managers fighting over it is a class of bug
+/// that only shows up on a bench with two wraps and a low battery.
+///
+/// Wraps are recognised by the punch service UUID in their advertisement, not by
+/// name. Names are being handed out by the crate now (Impktband 1, 2, 3...), so
+/// anything keyed on a name prefix would quietly stop finding boards the day one
+/// was renamed. The service UUID is in the firmware and does not move.
+final class WrapCentral: NSObject, ObservableObject {
+
+    static let shared = WrapCentral()
+
+    static let punchService  = CBUUID(string: "6e2a0001-b5a3-f393-e0a9-e50e24dcca9e")
+    /// Nordic's legacy DFU service, which is what the Adafruit bootloader and the
+    /// running firmware both speak. Its presence on a connected wrap is the proof
+    /// that an over-the-air update will be accepted.
+    static let dfuService    = CBUUID(string: "00001530-1212-efde-1523-785feabcd123")
+
+    @Published private(set) var poweredOn = false
+    @Published private(set) var found: [FoundWrap] = []
+    @Published private(set) var scanning = false
+
+    /// Set by the web view: (event name, payload) delivered into the page.
+    var emit: ((String, [String: Any]) -> Void)?
+
+    private var manager: CBCentralManager!
+    private var peripherals: [UUID: CBPeripheral] = [:]
+    private var advNames: [UUID: String] = [:]
+
+    private typealias Reply = (Bool, [String: Any]) -> Void
+
+    private var connectWaiters: [UUID: Reply] = [:]
+    private var servicesLeft:   [UUID: Int] = [:]
+    private var readWaiters:  [String: Reply] = [:]
+    private var writeWaiters: [String: Reply] = [:]
+    private var notifyWaiters: [String: Reply] = [:]
+    private var pickWaiter: Reply?
+    private var pickDeadline: Date?
+    private var pickPreferredNames: [String] = []
+    private var queued: [() -> Void] = []
+
+    private let knownKey = "impkt.known.wraps"
+
+    private override init() {
+        super.init()
+        manager = CBCentralManager(delegate: self, queue: .main)
+    }
+
+    // MARK: - things the app's own screens use
+
+    func startScan() {
+        whenReady {
+            self.manager.scanForPeripherals(
+                withServices: [WrapCentral.punchService],
+                options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+            self.scanning = true
+        }
+    }
+
+    func stopScan() {
+        if manager.state == .poweredOn { manager.stopScan() }
+        scanning = false
+    }
+
+    func peripheral(_ id: UUID) -> CBPeripheral? {
+        if let p = peripherals[id] { return p }
+        let found = manager.retrievePeripherals(withIdentifiers: [id]).first
+        if let f = found { peripherals[id] = f }
+        return found
+    }
+
+    /// Disconnect before handing a wrap to the DFU library, which connects to it
+    /// itself. Two connections to one peripheral is not an error on iOS, it is
+    /// worse: it works, and then the update stalls halfway with no reason given.
+    func release(_ id: UUID) {
+        guard let p = peripherals[id], p.state != .disconnected else { return }
+        manager.cancelPeripheralConnection(p)
+    }
+
+    private func whenReady(_ work: @escaping () -> Void) {
+        if manager.state == .poweredOn { work() } else { queued.append(work) }
+    }
+
+    private func remember(_ id: UUID) {
+        var all = UserDefaults.standard.stringArray(forKey: knownKey) ?? []
+        if !all.contains(id.uuidString) {
+            all.append(id.uuidString)
+            UserDefaults.standard.set(all, forKey: knownKey)
+        }
+    }
+
+    private func forget(_ id: UUID) {
+        let all = (UserDefaults.standard.stringArray(forKey: knownKey) ?? [])
+            .filter { $0 != id.uuidString }
+        UserDefaults.standard.set(all, forKey: knownKey)
+    }
+
+    private func note(_ p: CBPeripheral, rssi: Int?, name: String?) {
+        if let n = name, !n.isEmpty { advNames[p.identifier] = n }
+        let display = advNames[p.identifier] ?? p.name ?? "A wrap"
+        let row = FoundWrap(id: p.identifier, name: display,
+                            rssi: rssi ?? found.first(where: { $0.id == p.identifier })?.rssi ?? -127,
+                            seen: Date(), connected: p.state == .connected)
+        if let i = found.firstIndex(where: { $0.id == p.identifier }) { found[i] = row }
+        else { found.append(row) }
+    }
+
+    // MARK: - the bridge
+
+    /// One entry point for every op the page can ask for. Unknown ops are refused
+    /// out loud: a bridge that answers a call it does not implement with an empty
+    /// success is the hardest kind of bug to see from inside a web page.
+    func handle(op: String, args: [String: Any], reply: @escaping (Bool, [String: Any]) -> Void) {
+        switch op {
+
+        case "known":
+            whenReady {
+                let ids = (UserDefaults.standard.stringArray(forKey: self.knownKey) ?? [])
+                    .compactMap { UUID(uuidString: $0) }
+                var list = self.manager.retrievePeripherals(withIdentifiers: ids)
+                list += self.manager.retrieveConnectedPeripherals(
+                    withServices: [WrapCentral.punchService])
+                var out: [[String: Any]] = []
+                var seen = Set<UUID>()
+                for p in list where !seen.contains(p.identifier) {
+                    seen.insert(p.identifier)
+                    self.peripherals[p.identifier] = p
+                    var d: [String: Any] = ["id": p.identifier.uuidString]
+                    if let n = self.advNames[p.identifier] ?? p.name { d["name"] = n }
+                    out.append(d)
+                }
+                reply(true, ["devices": out])
+            }
+
+        case "scan":
+            self.startScan()
+            reply(true, [:])
+
+        case "scanStop":
+            self.stopScan()
+            reply(true, [:])
+
+        case "pick":
+            // The page asks for a chooser. iOS has no system chooser for this, so
+            // the app picks the strongest wrap it can see: on a bench that is the
+            // one in the pilot's hand, which is the answer the dialog was asking
+            // for anyway. Names from the page's filter are a preference, never a
+            // requirement, because a renamed board must still be findable.
+            self.pickPreferredNames = (args["names"] as? [String] ?? [])
+                + (args["prefixes"] as? [String] ?? [])
+            self.pickWaiter = reply
+            self.pickDeadline = Date().addingTimeInterval(10)
+            self.startScan()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self.settlePick() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10.5) { self.settlePick(force: true) }
+
+        case "forget":
+            if let id = uuid(args) { self.forget(id) }
+            reply(true, [:])
+
+        case "connect":
+            // Inside whenReady, not around the connect call alone: retrieving a
+            // peripheral by identifier returns nothing at all while the radio is
+            // still starting, which would answer a perfectly good connect with
+            // "this phone does not know that wrap" during the first second after
+            // launch.
+            whenReady {
+                guard let id = self.uuid(args), let p = self.peripheral(id) else {
+                    reply(false, ["name": "NotFoundError",
+                                  "message": "this phone does not know that wrap any more"])
+                    return
+                }
+                p.delegate = self
+                self.connectWaiters[id] = reply
+                self.remember(id)
+                self.manager.connect(p, options: nil)
+            }
+
+        case "disconnect":
+            if let id = uuid(args) { release(id) }
+            reply(true, [:])
+
+        case "read":
+            guard let (p, c) = target(args) else { reply(false, notThere); return }
+            readWaiters[key(p, c)] = reply
+            p.readValue(for: c)
+
+        case "write":
+            guard let (p, c) = target(args) else { reply(false, notThere); return }
+            let data = Data(base64Encoded: args["data"] as? String ?? "") ?? Data()
+            let wantsAck = (args["response"] as? Bool ?? true)
+                && c.properties.contains(.write)
+            if wantsAck {
+                writeWaiters[key(p, c)] = reply
+                p.writeValue(data, for: c, type: .withResponse)
+            } else {
+                p.writeValue(data, for: c, type: .withoutResponse)
+                reply(true, [:])
+            }
+
+        case "notify":
+            guard let (p, c) = target(args) else { reply(false, notThere); return }
+            let on = args["on"] as? Bool ?? true
+            guard c.properties.contains(.notify) || c.properties.contains(.indicate) else {
+                reply(false, ["name": "NotSupportedError",
+                              "message": "that characteristic does not notify"])
+                return
+            }
+            notifyWaiters[key(p, c)] = reply
+            p.setNotifyValue(on, for: c)
+
+        default:
+            reply(false, ["name": "NotSupportedError",
+                          "message": "the app bridge has no \(op)"])
+        }
+    }
+
+    private let notThere: [String: Any] = [
+        "name": "NotFoundError",
+        "message": "that wrap is not connected, or has no such characteristic"
+    ]
+
+    private func uuid(_ args: [String: Any]) -> UUID? {
+        UUID(uuidString: args["device"] as? String ?? "")
+    }
+
+    private func key(_ p: CBPeripheral, _ c: CBCharacteristic) -> String {
+        "\(p.identifier.uuidString)|\(c.uuid.uuidString.lowercased())"
+    }
+
+    /// Characteristics are looked up by UUID across every discovered service,
+    /// because the page identifies them that way and they are unique on this
+    /// firmware.
+    private func target(_ args: [String: Any]) -> (CBPeripheral, CBCharacteristic)? {
+        guard let id = uuid(args), let p = peripherals[id],
+              let wanted = args["characteristic"] as? String else { return nil }
+        let want = CBUUID(string: wanted)
+        for s in p.services ?? [] {
+            for c in s.characteristics ?? [] where c.uuid == want { return (p, c) }
+        }
+        return nil
+    }
+
+    private func settlePick(force: Bool = false) {
+        guard let waiter = pickWaiter else { return }
+        let fresh = found.filter { Date().timeIntervalSince($0.seen) < 6 }
+        if fresh.isEmpty {
+            if force || (pickDeadline.map { Date() > $0 } ?? false) {
+                pickWaiter = nil
+                waiter(true, [:])          // no device: the page reads this as cancelled
+            }
+            return
+        }
+        let preferred = fresh.filter { w in
+            pickPreferredNames.contains { !$0.isEmpty && w.name.lowercased().hasPrefix($0.lowercased()) }
+        }
+        let pool = preferred.isEmpty ? fresh : preferred
+        guard let best = pool.max(by: { $0.rssi < $1.rssi }) else { return }
+        pickWaiter = nil
+        remember(best.id)
+        waiter(true, ["device": ["id": best.id.uuidString, "name": best.name]])
+    }
+}
+
+extension WrapCentral: CBCentralManagerDelegate {
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        poweredOn = central.state == .poweredOn
+        guard poweredOn else { return }
+        let work = queued
+        queued = []
+        work.forEach { $0() }
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover p: CBPeripheral,
+                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        peripherals[p.identifier] = p
+        let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        note(p, rssi: RSSI.intValue, name: name)
+        emit?("advertisement", [
+            "id": p.identifier.uuidString,
+            "name": advNames[p.identifier] ?? p.name ?? "",
+            "rssi": RSSI.intValue,
+            "uuids": (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
+                .map { $0.uuidString.lowercased() }
+        ])
+        if pickWaiter != nil { settlePick() }
+    }
+
+    func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) {
+        // Everything is discovered up front, services and characteristics both,
+        // and handed to the page in one reply. The page then does its lookups
+        // locally, so a screen that reads five characteristics costs one round
+        // trip instead of eleven.
+        p.discoverServices(nil)
+    }
+
+    func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral,
+                        error: Error?) {
+        if let reply = connectWaiters.removeValue(forKey: p.identifier) {
+            reply(false, ["name": "NetworkError",
+                          "message": error?.localizedDescription ?? "the wrap would not connect"])
+        }
+    }
+
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral,
+                        error: Error?) {
+        if let reply = connectWaiters.removeValue(forKey: p.identifier) {
+            reply(false, ["name": "NetworkError",
+                          "message": error?.localizedDescription ?? "the wrap dropped the link"])
+        }
+        if let i = found.firstIndex(where: { $0.id == p.identifier }) {
+            found[i].connected = false
+        }
+        emit?("disconnected", ["device": p.identifier.uuidString])
+    }
+}
+
+extension WrapCentral: CBPeripheralDelegate {
+
+    func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
+        let services = p.services ?? []
+        servicesLeft[p.identifier] = services.count
+        if services.isEmpty { finishConnect(p) ; return }
+        for s in services { p.discoverCharacteristics(nil, for: s) }
+    }
+
+    func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
+                    error: Error?) {
+        let left = (servicesLeft[p.identifier] ?? 1) - 1
+        servicesLeft[p.identifier] = left
+        if left <= 0 { finishConnect(p) }
+    }
+
+    private func finishConnect(_ p: CBPeripheral) {
+        servicesLeft[p.identifier] = nil
+        guard let reply = connectWaiters.removeValue(forKey: p.identifier) else { return }
+        var services: [[String: Any]] = []
+        for s in p.services ?? [] {
+            let chars: [[String: Any]] = (s.characteristics ?? []).map { c in
+                ["uuid": c.uuid.uuidString.lowercased(),
+                 "properties": [
+                    "read":   c.properties.contains(.read),
+                    "write":  c.properties.contains(.write),
+                    "notify": c.properties.contains(.notify) || c.properties.contains(.indicate)
+                 ]]
+            }
+            services.append(["uuid": s.uuid.uuidString.lowercased(), "characteristics": chars])
+        }
+        if let i = found.firstIndex(where: { $0.id == p.identifier }) { found[i].connected = true }
+        var payload: [String: Any] = ["services": services]
+        if let n = advNames[p.identifier] ?? p.name { payload["name"] = n }
+        reply(true, payload)
+    }
+
+    func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
+        let data = c.value ?? Data()
+        if let reply = readWaiters.removeValue(forKey: key(p, c)) {
+            if let e = error {
+                reply(false, ["name": "NetworkError", "message": e.localizedDescription])
+            } else {
+                reply(true, ["data": data.base64EncodedString()])
+            }
+            // A read and a notification arrive through the same callback, so the
+            // page is told about it either way: a value that answered a read is
+            // still a new value, and the page's own handler expects to see it.
+        }
+        guard c.isNotifying else { return }
+        emit?("notify", ["device": p.identifier.uuidString,
+                         "characteristic": c.uuid.uuidString.lowercased(),
+                         "data": data.base64EncodedString()])
+    }
+
+    func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic,
+                    error: Error?) {
+        guard let reply = notifyWaiters.removeValue(forKey: key(p, c)) else { return }
+        if let e = error {
+            reply(false, ["name": "NetworkError", "message": e.localizedDescription])
+        } else {
+            reply(true, [:])
+        }
+    }
+
+    func peripheral(_ p: CBPeripheral, didWriteValueFor c: CBCharacteristic, error: Error?) {
+        guard let reply = writeWaiters.removeValue(forKey: key(p, c)) else { return }
+        if let e = error {
+            reply(false, ["name": "NetworkError", "message": e.localizedDescription])
+        } else {
+            reply(true, [:])
+        }
+    }
+}

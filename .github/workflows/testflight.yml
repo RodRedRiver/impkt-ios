@@ -1,0 +1,126 @@
+# Build the app on GitHub's Mac and put it on TestFlight.
+#
+# The point of this file: the iOS SDK ships only inside Xcode, and Xcode will not
+# install on macOS 13.4. GitHub's macOS runners already have both. So the laptop
+# stays as it is, the runner does the compiling, and the app arrives on a phone
+# through TestFlight.
+#
+# What has to exist before the first run, once:
+#
+#  1. This directory pushed to a GitHub repository.
+#  2. An App Store Connect API key: App Store Connect > Users and Access >
+#     Integrations > App Store Connect API > generate a team key with the App
+#     Manager role. It downloads a .p8 file once and never again, so keep it.
+#  3. An app record in App Store Connect with bundle id com.impktband.pilot,
+#     and that same bundle id registered under Certificates, Identifiers &
+#     Profiles. Automatic signing below creates the certificate and profile
+#     itself, which is what keeps this free of the usual certificate wrangling.
+#  4. Four repository secrets, under Settings > Secrets and variables > Actions:
+#       ASC_KEY_ID      the key's ten-character id
+#       ASC_ISSUER_ID   the issuer uuid shown above the key list
+#       ASC_KEY_P8      the .p8 file's contents, base64: base64 -i key.p8 | pbcopy
+#       APPLE_TEAM_ID   your ten-character team id
+#
+# After that a push to main produces a TestFlight build. Adding a tester is an
+# email address in App Store Connect, including one in another country, which is
+# the whole reason this exists.
+
+name: TestFlight
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Generate the project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      # The page and the firmware zip are committed rather than fetched: the
+      # runner has no copy of the website or of boxing-fw. sync-web.sh is what
+      # refreshes them locally before a commit, so what ships is always what was
+      # last built and tested on the bench.
+      - name: Check the bundled resources are there
+        run: |
+          test -f IMPKT/Resources/Web/index.html || { echo "the pilot page is missing: run ./sync-web.sh and commit it"; exit 1; }
+          test -f IMPKT/Resources/firmware.zip  || { echo "the firmware package is missing: run ./sync-web.sh and commit it"; exit 1; }
+          echo "firmware in this build: $(cat IMPKT/Resources/firmware-version.txt)"
+
+      - name: Write the App Store Connect key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p ~/private_keys
+          echo "$ASC_KEY_P8" | base64 --decode > ~/private_keys/AuthKey.p8
+          test -s ~/private_keys/AuthKey.p8
+
+      # The build number is the run number, so every upload is higher than the
+      # last one. App Store Connect rejects a repeat, and hand-bumping a number
+      # in a plist is the thing everyone forgets.
+      - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild -project IMPKT.xcodeproj \
+            -scheme IMPKT \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/IMPKT.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            archive
+
+      - name: Export the ipa
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          sed "s/TEAM_ID_HERE/$APPLE_TEAM_ID/" ExportOptions.plist > build/ExportOptions.plist
+          xcodebuild -exportArchive \
+            -archivePath build/IMPKT.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey.p8 \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app -f build/ipa/IMPKT.ipa -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      # Kept whatever happens to the upload: a build that compiled but would not
+      # upload is a credentials problem, and the ipa is the proof of that rather
+      # than something to rebuild.
+      - name: Keep the build
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: IMPKT-ipa
+          path: build/ipa
+          if-no-files-found: warn
