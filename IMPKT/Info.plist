@@ -2,15 +2,36 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- The keys every app bundle must have. Xcode does not add them to a custom
+	     Info.plist, and without CFBundleIdentifier an archive fails late with
+	     "Archive Missing Bundle Identifier" rather than at compile time. Each one
+	     reads a build setting, so project.yml stays the single place a value is
+	     written. -->
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
 	<!-- What the home screen says. Matches the App Store listing, "Impkt Band",
 	     rather than the target name, which is IMPKT and stays that way because
 	     renaming a target renames the scheme the CI workflow builds. -->
 	<key>CFBundleDisplayName</key>
 	<string>Impkt Band</string>
+	<!-- Both from build settings on purpose. The workflow passes
+	     CURRENT_PROJECT_VERSION=<run number>, and a hardcoded 1 here would
+	     silently ignore it, so every upload after the first would be refused as
+	     a repeat build number. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.1</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
