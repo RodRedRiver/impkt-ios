@@ -13,9 +13,20 @@ struct PilotPage: UIViewRepresentable {
 
     func makeCoordinator() -> Bridge { Bridge() }
 
+    /// The page is served under a scheme of our own rather than from file://.
+    ///
+    /// Not a preference. On a file origin WKWebView refuses fetch as a cross
+    /// origin request, and the gate on the first screen fetches ../pilots.json to
+    /// check an activation code, so the page cannot get past its own front door.
+    /// localStorage on a file origin is unreliable too, and Supabase calls later
+    /// would hit the same wall. A custom scheme gives the page a real origin, and
+    /// every relative path it already uses resolves inside the bundle.
+    static let scheme = "impkt"
+
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.setURLSchemeHandler(BundleFiles(), forURLScheme: PilotPage.scheme)
 
         // At document start, so the page never runs a line of its own script in a
         // window without navigator.bluetooth. Injected from the bundle rather than
@@ -35,9 +46,11 @@ struct PilotPage: UIViewRepresentable {
         #endif
         context.coordinator.attach(web)
 
-        if let index = Bundle.main.url(forResource: "index", withExtension: "html",
-                                       subdirectory: "Web") {
-            web.loadFileURL(index, allowingReadAccessTo: index.deletingLastPathComponent())
+        if Bundle.main.url(forResource: "index", withExtension: "html",
+                           subdirectory: "Web") != nil {
+            // Web/index.html, so ../css, ../fonts and ../pilots.json land on the
+            // bundle root exactly as they land on the site root.
+            web.load(URLRequest(url: URL(string: "\(PilotPage.scheme)://app/Web/index.html")!))
         } else {
             web.loadHTMLString(
                 "<h2 style='font:600 17px -apple-system;padding:24px'>The pilot page is "
@@ -47,6 +60,60 @@ struct PilotPage: UIViewRepresentable {
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {}
+}
+
+/// Serves the bundled copy of the site over the app's own URL scheme.
+///
+/// Read only, and rooted: a request is answered from inside the bundle's resource
+/// directory or not at all. The check is on the resolved path, not on the text of
+/// the request, because "/Web/../../.." is a perfectly ordinary looking URL and
+/// standardising first is what makes the comparison mean anything.
+final class BundleFiles: NSObject, WKURLSchemeHandler {
+
+    private static let types = [
+        "html": "text/html; charset=utf-8",
+        "js":   "text/javascript; charset=utf-8",
+        "css":  "text/css; charset=utf-8",
+        "json": "application/json; charset=utf-8",
+        "svg":  "image/svg+xml",
+        "png":  "image/png",
+        "jpg":  "image/jpeg",
+        "jpeg": "image/jpeg",
+        "webp": "image/webp",
+        "ico":  "image/x-icon",
+        "woff2": "font/woff2",
+        "zip":  "application/zip"
+    ]
+
+    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+        guard let root = Bundle.main.resourceURL?.standardizedFileURL,
+              let url = task.request.url else {
+            task.didFailWithError(URLError(.badURL)); return
+        }
+
+        let wanted = root.appendingPathComponent(url.path).standardizedFileURL
+        guard wanted.path.hasPrefix(root.path),
+              let data = try? Data(contentsOf: wanted) else {
+            // 404 rather than an error: the page asks for a favicon that is not
+            // bundled, and a failed task logs a warning on every load.
+            task.didReceive(HTTPURLResponse(url: url, statusCode: 404,
+                                            httpVersion: nil, headerFields: nil)!)
+            task.didFinish()
+            return
+        }
+
+        let type = BundleFiles.types[wanted.pathExtension.lowercased()]
+            ?? "application/octet-stream"
+        let head = HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil,
+                                   headerFields: ["Content-Type": type,
+                                                  "Content-Length": String(data.count),
+                                                  "Cache-Control": "no-store"])!
+        task.didReceive(head)
+        task.didReceive(data)
+        task.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) {}
 }
 
 /// Carries messages both ways: the page's calls down to CoreBluetooth, and

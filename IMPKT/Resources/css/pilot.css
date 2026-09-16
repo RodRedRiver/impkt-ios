@@ -1,0 +1,171 @@
+/* ══════════════════════════════════════════════════════════════
+   IMPKT test pilot — shared layer
+
+   This is a separate site on a separate domain from impktband.com,
+   and it deliberately carries the same design system rather than a
+   new one: the same self-hosted IBM Plex Sans, the same neutral
+   ladder, the same single chromatic red used only as a fill, the
+   same two radii, the same negative tracking that tightens as size
+   grows. A pilot who has just come off the marketing site should
+   not feel they have landed somewhere else.
+
+   What is NOT copied over is everything the marketing site needs
+   and this one does not: nav, footer, hero, section furniture,
+   waitlist band, reveals. This page is one screen with one job.
+
+   Both deviations from .claude/APPLE-DESIGN.md carry over with the
+   system and for the same reasons: the accent is #C41E3A rather
+   than Apple blue, and the face is IBM Plex Sans rather than SF
+   Pro, which is licensed to the OS and cannot be self-hosted.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── FONTS — self-hosted, variable, no CDN ────────────────────── */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-sans-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6,
+    U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* The extended subset is here for one reason: pilot names. The marketing
+   site's copy is all Latin-1, but a name is not copy — Muñoz, Kraśniewski
+   and Şahin all need this file, and a name that renders in a fallback face
+   on the one page that is about that person is the worst possible place for
+   a silent substitution. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-sans-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+/* ── RESET ────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* The one chromatic colour, in the system's tiers. Only the two dark
+     tiers are here: --red-lift and --red-air exist so display type can be
+     read on Carbon, and this site has no dark surface. */
+  --red:        #C41E3A;
+  --red-deep:   #A31430;
+
+  --carbon:     #1D1D1F;
+  --frost:      #F5F5F7;
+  --pebble:     #E2E2E5;
+  --ash:        #707070;
+  --hairline:   #D2D2D7;
+  --white:      #FFFFFF;
+
+  --font: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system,
+          BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --text-caption:    12px; --tracking-caption:    -0.022em;
+  --text-body-sm:    14px; --tracking-body-sm:    -0.016em;
+  --text-body:       17px; --tracking-body:       -0.016em;
+  --text-subheading: 21px; --tracking-subheading: -0.014em;
+  --text-heading-sm: 28px; --tracking-heading-sm: -0.018em;
+  --text-heading:    40px; --tracking-heading:    -0.021em;
+  --text-display:    56px; --tracking-display:    -0.024em;
+
+  --radius-pill: 980px;
+  --radius-card: 8px;
+
+  --ease:        cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  background: var(--white);
+  color: var(--carbon);
+  font-family: var(--font);
+  font-size: var(--text-body);
+  letter-spacing: var(--tracking-body);
+  line-height: 1.47;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+h1, h2 { font-weight: 600; text-wrap: balance; }
+.h-display {
+  font-size: clamp(40px, 6vw, var(--text-display));
+  letter-spacing: var(--tracking-display);
+  line-height: 1.07;
+}
+.h-heading {
+  font-size: clamp(28px, 4.2vw, var(--text-heading));
+  letter-spacing: var(--tracking-heading);
+  line-height: 1.14;
+}
+.tagline {
+  font-weight: 300;
+  font-size: clamp(19px, 2.2vw, 26px);
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* ── FOCUS ────────────────────────────────────────────────────── */
+:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; border-radius: 3px; }
+:focus:not(:focus-visible) { outline: none; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+/* ── BUTTONS — two shapes, both 980px, no shadow ──────────────── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 11px 22px;
+  font-family: var(--font);
+  font-size: var(--text-body); font-weight: 400;
+  letter-spacing: var(--tracking-body);
+  text-decoration: none;
+  border: none; border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.15s var(--ease-smooth);
+}
+.btn:active { transform: scale(0.98); }
+.btn:disabled { cursor: default; }
+.btn-red { background: var(--red); color: var(--white); }
+.btn-red:hover:not(:disabled) { background: var(--red-deep); }
+.btn-outline {
+  background: transparent; color: var(--red-deep);
+  border: 1px solid var(--red-deep); padding: 10px 21px;
+}
+.btn-outline:hover { background: var(--red-deep); color: var(--white); }
+.btn-ghost {
+  background: none; border: none; padding: 11px 0;
+  color: var(--red-deep); text-decoration: none;
+  font-size: var(--text-body); letter-spacing: var(--tracking-body);
+}
+.btn-ghost:hover { text-decoration: underline; }
+
+/* ── FIELDS ───────────────────────────────────────────────────── */
+.field {
+  background: var(--frost);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+  padding: 12px 16px;
+  font-family: var(--font);
+  font-size: var(--text-body); font-weight: 400;
+  letter-spacing: var(--tracking-body);
+  color: var(--carbon);
+  transition: border-color 0.2s, background 0.2s;
+  min-width: 0;
+}
+.field::placeholder { color: var(--ash); }
+.field:hover { border-color: var(--ash); }
+.field:focus { outline: 2px solid var(--red); outline-offset: 1px; border-color: transparent; }
+.field:disabled { background: var(--pebble); color: var(--ash); }
