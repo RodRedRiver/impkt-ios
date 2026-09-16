@@ -40,7 +40,12 @@ struct PilotPage: UIViewRepresentable {
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.allowsBackForwardNavigationGestures = false
-        web.scrollView.bounces = false
+        // Bounce is on, which is the default and now the right default: the page
+        // scrolls on a phone, and a scrolling view that stops dead at its ends is
+        // the one part of this that would not feel like iOS. It was off while the
+        // page was locked to the window, where rubber-banding a page that cannot
+        // move only ever looked like something had broken.
+        web.scrollView.bounces = true
         #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
         #endif

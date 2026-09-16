@@ -19,6 +19,19 @@
  */
 (function () {
   'use strict';
+
+  /* Tells the page it is running in the app. One file serves the website and the
+     app, and the handful of rules that differ between them hang off this class:
+     the mark in the top-left corner is a link back to impktband.com, which is
+     navigation the app already has and cannot use.
+     Keyed off the native handler being there rather than off the user agent,
+     because that is the thing which is actually true here, and set before the
+     early return below so it happens whether or not this shim is needed. */
+  if (window.webkit && window.webkit.messageHandlers
+      && window.webkit.messageHandlers.impkt) {
+    document.documentElement.classList.add('in-app');
+  }
+
   if (window.navigator.bluetooth && !window.__impktShim) return;   // real one wins
 
   var seq = 1;

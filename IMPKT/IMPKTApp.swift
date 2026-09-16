@@ -16,8 +16,14 @@ struct IMPKTApp: App {
 struct RootView: View {
     var body: some View {
         TabView {
+            // Inside the safe area, top and bottom. It used to run under the tab
+            // bar so the page's white background reached the bottom of the
+            // screen, and that was fine while the page was one locked screen with
+            // nothing at the bottom of it. The page scrolls on a phone now, and a
+            // scrolling page under a tab bar ends with its last card and its
+            // button behind the bar for as long as the pilot is at the bottom of
+            // it. The background is white either way.
             PilotPage()
-                .ignoresSafeArea(edges: .bottom)
                 .tabItem { Label("Test", systemImage: "figure.boxing") }
 
             UpdateView()

@@ -444,6 +444,16 @@
     .name .ch.in { transform: none; opacity: 1; filter: blur(0); }
     .name .sp { display: inline-block; width: 0.26em; }
 
+    /* On a phone the name is set on two lines, the given name over the rest, and
+       each line is its own block. Both copies of the name stack or neither does:
+       the flight scales the flying copy to the landed one by the ratio of their
+       widths, and that is only the ratio of their sizes if the two are the same
+       shape. Centred, because the shorter of the two lines has to sit under the
+       middle of the longer one rather than beside it. */
+    .name.stack { text-align: center; }
+    .name.stack .wd { display: block; }
+    .name-title .tl { display: block; }
+
     /* ── BEAT 3 — THE SNAP ──────────────────────────────────── */
     /* The flight itself is a transform to a target computed from the landing
        slot's own box (see snap), so the landing is pixel-exact rather than a
@@ -1663,16 +1673,62 @@
     }
 
     /* ── RESPONSIVE ─────────────────────────────────────────── */
+    /* A phone is a page, not a screen.
+       Everything above this line is laid out to fit one window, because on a
+       laptop it does: the name, four cards and the button come to about 700px of
+       height and there is 740px to put them in. At 390px wide the same content
+       is 1100px tall in an 844px window, and locking the document to the window
+       there does not make it fit, it makes the bottom of it unreachable. What
+       was behind the fold was a whole card and the only button on the screen, on
+       a device whose entire input method is a thumb that scrolls.
+
+       So on a phone the document scrolls. Nothing about the choreography
+       depends on it not scrolling: the flying name is fixed to the viewport, and
+       the page is at the top of itself for the whole of the flight. */
     @media (max-width: 700px) {
+      html, body { height: auto; overflow: visible; }
+      .hub {
+        height: auto; min-height: 100svh;
+        /* Sideways is still clipped. Vertical overflow is the page now, but a
+           long name is nowrap by design and a document that scrolls left and
+           right is a document with a broken layout. clip rather than hidden
+           because hidden on one axis turns the other axis into a scroll
+           container of its own, and one scroller is the point. */
+        overflow-x: clip; overflow-y: visible;
+        /* The last value clears the home indicator on a phone, and the tab bar
+           in the app, both of which sit over the bottom of the window. */
+        padding: 78px 20px calc(34px + env(safe-area-inset-bottom));
+      }
+      /* Centring a column that is taller than its box puts the top of it above
+         the top of the box, which is somewhere no amount of scrolling reaches. */
+      .pane { justify-content: flex-start; }
+      /* One scroller, and it is the page. The briefing takes a scroll of its own
+         on a short window further up, and two nested scrollers under one thumb
+         is a swipe that moves whichever of them the touch landed on. */
+      #brief { overflow: visible; }
       .mark { left: 24px; top: 22px; }
-      .hub { padding: 78px 20px 88px; }
       .code-field { flex-basis: 100%; }
       /* The action goes full width on a phone, where a pill the width of the
          word is a small target at the bottom of a screen. */
       .code-form .btn-glass, .hub-nav .btn-glass, .hub-nav .btn-plain { width: 100%; }
       .hub-nav { gap: 14px; }
       .card { padding: 22px 20px 24px; }
+      /* The name is set on two lines here and takes the size that comes with
+         them: 9vw of a phone is a name you have to lean in to read, and the name
+         is what this page is. See nameLines() in the script for the split. */
+      .name-title { font-size: clamp(30px, min(13vw, 9vh), 104px); }
     }
+
+    /* ── INSIDE THE APP ─────────────────────────────────────── */
+    /* Set on <html> by the app's bridge when the native side is there. One file
+       serves the website and the app, and this is where the two are honestly
+       different rather than the same page pretending twice.
+
+       The mark is a link back to impktband.com. That is navigation the app
+       already has and cannot use, and in the corner of a phone it sits over the
+       top of the content. The padding it was being given back comes with it. */
+    html.in-app .mark { display: none; }
+    html.in-app .hub { padding-top: clamp(18px, 3vh, 44px); }
   </style>
 </head>
 <body>
@@ -2547,7 +2603,22 @@
     nameEl.style.fontSize = '150px';
     const room = window.innerWidth * 0.86;
     const w = nameEl.getBoundingClientRect().width;
-    if (w > room) nameEl.style.fontSize = Math.max(34, 150 * (room / w)) + 'px';
+    if (w > room) nameEl.style.fontSize = Math.max(24, 150 * (room / w)) + 'px';
+  }
+
+  /* The lines the name is set on: one on a laptop, two on a phone with the given
+     name over the rest of it.
+     A name is the widest thing on this page and a phone is the narrowest window
+     it is read in, and the two do not meet on one line: "Rodrigo Rio-Tinto" at
+     390px comes out at 35px, which is body copy with a gradient on it. On two
+     lines the same name is set at 50px and looks like the thing the page is
+     about. Two lines and not more: a person has one given name and one family
+     name however many words are in either, and a line per word would make a list
+     out of "Ana Rita Ré". */
+  function nameLines(text) {
+    const parts = text.trim().split(/\s+/);
+    if (parts.length < 2 || !matchMedia('(max-width: 700px)').matches) return [text];
+    return [parts[0], parts.slice(1).join(' ')];
   }
 
   /* Reassembles one left-to-right ramp out of the per-letter backgrounds: every
@@ -2563,31 +2634,72 @@
 
      Must run after fitName(), not before. fitName sets the font size, and a
      ramp measured at 150px is the wrong width for a name that was scaled down
-     to fit a phone. */
+     to fit a phone.
+
+     One ramp per line, not one per name. The gradient runs left to right, and a
+     name on two lines has two left-to-rights in it: measured across both, the
+     second line would start at the colour the first one ended on and the name
+     would read as two different words. Grouped by the line each letter is on,
+     which on a one-line name is one group and exactly what it did before. */
   function paintRamp() {
     const ch = [...nameEl.querySelectorAll('.ch')];
     if (!ch.length) return;
-    const x0 = ch[0].offsetLeft;
-    const last = ch[ch.length - 1];
-    const w = last.offsetLeft + last.offsetWidth - x0;
-    if (w <= 0) return;
+    const lines = new Map();
     ch.forEach(el => {
-      el.style.setProperty('--ramp-w', w + 'px');
-      el.style.setProperty('--ramp-x', (x0 - el.offsetLeft) + 'px');
+      if (!lines.has(el.offsetTop)) lines.set(el.offsetTop, []);
+      lines.get(el.offsetTop).push(el);
+    });
+    lines.forEach(row => {
+      const x0 = Math.min(...row.map(el => el.offsetLeft));
+      const w = Math.max(...row.map(el => el.offsetLeft + el.offsetWidth)) - x0;
+      if (w <= 0) return;
+      row.forEach(el => {
+        el.style.setProperty('--ramp-w', w + 'px');
+        el.style.setProperty('--ramp-x', (x0 - el.offsetLeft) + 'px');
+      });
     });
   }
 
   /* Letters, not words. Spaces get their own element because an inline-block
-     letter next to a collapsed text node loses the space entirely. */
+     letter next to a collapsed text node loses the space entirely.
+     Where the name is set on two lines each line is a block of its own and there
+     is no space element between them: the break is the space. */
   function split(text) {
     nameEl.textContent = '';
-    return [...text].map(c => {
-      const el = document.createElement('span');
-      if (c === ' ') { el.className = 'sp'; nameEl.appendChild(el); return null; }
-      el.className = 'ch'; el.textContent = c;
-      nameEl.appendChild(el);
-      return el;
-    }).filter(Boolean);
+    const rows = nameLines(text);
+    nameEl.classList.toggle('stack', rows.length > 1);
+    const letters = [];
+    rows.forEach(row => {
+      let into = nameEl;
+      if (rows.length > 1) {
+        into = document.createElement('span');
+        into.className = 'wd';
+        nameEl.appendChild(into);
+      }
+      [...row].forEach(c => {
+        const el = document.createElement('span');
+        if (c === ' ') { el.className = 'sp'; into.appendChild(el); return; }
+        el.className = 'ch'; el.textContent = c;
+        into.appendChild(el);
+        letters.push(el);
+      });
+    });
+    return letters;
+  }
+
+  /* The landed name, in the same lines the flying copy is split into, and built
+     out of text nodes rather than markup: a name is data, and data going through
+     innerHTML is a bug waiting for a pilot with a bracket in their name. */
+  function setTitle(text) {
+    title.textContent = '';
+    const rows = nameLines(text);
+    if (rows.length < 2) { title.textContent = text; return; }
+    rows.forEach(row => {
+      const line = document.createElement('span');
+      line.className = 'tl';
+      line.textContent = row;
+      title.appendChild(line);
+    });
   }
 
   /* The landing slot, sized to the window the same way the flying copy is. The
@@ -2597,14 +2709,15 @@
      than in the middle of a page.
 
      Measured on scrollWidth against the hub's content box, because the title is
-     nowrap and will happily report a width wider than its parent. */
+     nowrap and will happily report a width wider than its parent. On two lines
+     that is the wider of them, which is the one that has to fit. */
   function fitTitle() {
     title.style.fontSize = '';
     const room = (hub.clientWidth - 48) * 0.98;
     const w = title.scrollWidth;
     if (w > room && w > 0) {
       const now = parseFloat(getComputedStyle(title).fontSize);
-      title.style.fontSize = Math.max(26, now * (room / w)) + 'px';
+      title.style.fontSize = Math.max(24, now * (room / w)) + 'px';
     }
   }
 
@@ -5316,7 +5429,7 @@
     document.title = pilot.first + ', Impkt test pilot';
     /* The landed name is the page's own heading now rather than a corner label,
        so it is filled in here and the flight lands on it. */
-    title.textContent = pilot.name;
+    setTitle(pilot.name);
     $('welcome-body').innerHTML =
       'You are one of the first people outside this building to put a pair of '
       + 'IMPKT wraps on. Every strike you throw is measured at a thousand samples '
@@ -5442,14 +5555,34 @@
   /* Rotating the phone. Both copies of the name were sized against a window
      that no longer exists, so both are refitted: the landed title on every
      resize, and the flying copy only while it is still standing still. A refit
-     mid-flight would fight the transform. */
+     mid-flight would fight the transform.
+     Turning a phone sideways also crosses the width where the name stops being
+     two lines, so the title is rebuilt rather than only resized. */
   window.addEventListener('resize', () => {
-    if (!hub.hidden) fitTitle();
+    if (!hub.hidden) {
+      if (PILOT) setTitle(PILOT.name);
+      fitTitle();
+    }
     if (!setup.hidden) showMeasures();   /* the track width changed, so the fill did */
     if (!nameEl.classList.contains('lit') || nameEl.classList.contains('flying')) return;
     fitName();
     paintRamp();   /* a refit is a new word width, so a new ramp width */
   });
+
+  /* Both sizes are the result of measuring text, and text measured in a fallback
+     face is the wrong measurement: Plex is wider than the system sans at the same
+     size, so a name that fitted while the webfont was still loading arrives too
+     big for the window and loses its last letters off the edge. Cheap insurance,
+     and it is the only place either size changes on its own. */
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      if (!hub.hidden) fitTitle();
+      if (nameEl.classList.contains('lit') && !nameEl.classList.contains('flying')) {
+        fitName();
+        paintRamp();
+      }
+    });
+  }
 
   </script>
 
