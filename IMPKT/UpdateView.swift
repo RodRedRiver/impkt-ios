@@ -107,6 +107,11 @@ extension Updater: DFUServiceDelegate {
             phase = .idle
             detail = "Stopped. The wrap kept the firmware it had."
             controller = nil
+        // The library adds states between releases, and a new one is not a
+        // failure: the update is still running, so the screen says so rather
+        // than showing stale text or claiming to be finished.
+        default:
+            detail = "Working"
         }
     }
 
