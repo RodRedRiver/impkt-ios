@@ -60,7 +60,44 @@ jobs:
           test -f IMPKT/Resources/firmware.zip  || { echo "the firmware package is missing: run ./sync-web.sh and commit it"; exit 1; }
           echo "firmware in this build: $(cat IMPKT/Resources/firmware-version.txt)"
 
+      # Compiles everything and resolves the Nordic package, with no certificate
+      # and no Apple account involved. It runs before the signed build on purpose:
+      # a syntax error and a missing credential look identical in an archive log,
+      # and this step tells them apart in two minutes.
+      - name: Compile check
+        run: |
+          xcodebuild -project IMPKT.xcodeproj \
+            -scheme IMPKT \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      # The signed half needs all four secrets. Until they are all set the build
+      # stops here rather than failing in a signing log, which is a much harder
+      # place to read "you have not finished the setup yet".
+      - name: Are the credentials there
+        id: creds
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          [ -n "$ASC_KEY_ID" ]    || missing="$missing ASC_KEY_ID"
+          [ -n "$ASC_ISSUER_ID" ] || missing="$missing ASC_ISSUER_ID"
+          [ -n "$ASC_KEY_P8" ]    || missing="$missing ASC_KEY_P8"
+          [ -n "$APPLE_TEAM_ID" ] || missing="$missing APPLE_TEAM_ID"
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::the app compiled, but nothing was uploaded: missing secrets$missing"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Write the App Store Connect key
+        if: steps.creds.outputs.ready == 'true'
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
         run: |
@@ -72,6 +109,7 @@ jobs:
       # last one. App Store Connect rejects a repeat, and hand-bumping a number
       # in a plist is the thing everyone forgets.
       - name: Archive
+        if: steps.creds.outputs.ready == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -91,6 +129,7 @@ jobs:
             archive
 
       - name: Export the ipa
+        if: steps.creds.outputs.ready == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
@@ -107,6 +146,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
       - name: Upload to TestFlight
+        if: steps.creds.outputs.ready == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
