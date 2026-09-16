@@ -34,14 +34,21 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Show the toolchain
+      # The image's default Xcode is not always its newest, and two things depend
+      # on getting the newest: current XcodeGen writes a project format that only
+      # Xcode 16 and later can open, and App Store Connect refuses an upload built
+      # against an old SDK. Picking the highest installed version by number keeps
+      # working when GitHub rolls the image forward.
+      - name: Use the newest Xcode on the runner
         run: |
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$newest" ]; then sudo xcode-select -s "$newest"; fi
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
 
