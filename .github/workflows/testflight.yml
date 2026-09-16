@@ -103,14 +103,19 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The name matters. xcodebuild takes any path, but altool searches a fixed
+      # list of directories for a file called exactly AuthKey_<key id>.p8 and
+      # reports "could not be found" for anything else, which reads like a missing
+      # secret rather than a filename.
       - name: Write the App Store Connect key
         if: steps.creds.outputs.ready == 'true'
         env:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
         run: |
           mkdir -p ~/private_keys
-          echo "$ASC_KEY_P8" | base64 --decode > ~/private_keys/AuthKey.p8
-          test -s ~/private_keys/AuthKey.p8
+          echo "$ASC_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
+          test -s ~/private_keys/AuthKey_$ASC_KEY_ID.p8
 
       # The build number is the run number, so every upload is higher than the
       # last one. App Store Connect rejects a repeat, and hand-bumping a number
@@ -128,7 +133,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath build/IMPKT.xcarchive \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey.p8 \
+            -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
@@ -148,7 +153,7 @@ jobs:
             -exportPath build/ipa \
             -exportOptionsPlist build/ExportOptions.plist \
             -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey.p8 \
+            -authenticationKeyPath ~/private_keys/AuthKey_$ASC_KEY_ID.p8 \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID"
 
