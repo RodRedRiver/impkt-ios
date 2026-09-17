@@ -12,3 +12,8 @@ DerivedData/
 *.cer
 
 .DS_Store
+
+# Python's bytecode cache. It was committed by accident, and it churns on every
+# run of tools/asc.py, so it turns a read only command into a dirty tree.
+__pycache__/
+*.pyc
