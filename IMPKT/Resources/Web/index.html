@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- class="gated" is beat 1 being up, and it is set here rather than by script so
+     it is true in the first frame the page paints. It comes off when the code
+     screen leaves. Its whole job is on a phone, where the document scrolls: see
+     the note on html.gated in the responsive block. -->
+<html lang="en" class="gated">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1685,6 +1689,24 @@
        the page is at the top of itself for the whole of the flight. */
     @media (max-width: 700px) {
       html, body { height: auto; overflow: visible; }
+      /* Except the gate. The paragraph above is about the briefing, which is
+         1100px of content and has to scroll; the code screen is six short things
+         and fits any phone with room to spare. A screen that fits and still
+         slides under the thumb is not a scrolling page, it is a page that looks
+         like it lost its bottom half — and inside the app it rubber-bands off
+         the top on the very first touch, which is the first thing a pilot does
+         to it. Locked while it is up and released when it leaves, so the two
+         screens each get the behaviour they want. */
+      html.gated, html.gated body { height: 100%; overflow: hidden; }
+      /* Air comes off, because it now has to fit rather than merely start with
+         96px. The window this screen actually gets is not 844: in the app the
+         web view gives up the status bar and the tab bar, and on an SE it is
+         about 520 to begin with. Centred inside whatever is left. */
+      .stage { padding: 30px 20px calc(26px + env(safe-area-inset-bottom)); }
+      /* The footnote keeps its hairline and loses its margin. It is the one part
+         of the screen nobody reads until they need it, so it is the part that
+         gives the height back. */
+      .code-hint { margin-top: 26px; padding-top: 16px; }
       .hub {
         height: auto; min-height: 100svh;
         /* Sideways is still clipped. Vertical overflow is the page now, but a
@@ -1715,6 +1737,16 @@
          them: 9vw of a phone is a name you have to lean in to read, and the name
          is what this page is. See nameLines() in the script for the split. */
       .name-title { font-size: clamp(30px, min(13vw, 9vh), 104px); }
+    }
+
+    /* The one case where locking the gate would hide it. The code screen comes to
+       just under 500px, which every phone clears with room to spare — the
+       smallest one this app runs on gives the web view about 600. A window this
+       short and this narrow is not a phone, it is a desktop browser somebody has
+       squashed, and a locked screen taller than its window has a top no amount of
+       scrolling reaches. So there it scrolls, which is the lesser fault. */
+    @media (max-width: 700px) and (max-height: 540px) {
+      html.gated, html.gated body { height: auto; overflow: visible; }
     }
 
     /* ── INSIDE THE APP ─────────────────────────────────────── */
@@ -2269,13 +2301,28 @@
   const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
   const normalise = s => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
+  /* The code, kept, so it is asked for once and never again. See resume() at the
+     bottom of the script for why the code is what is stored rather than the
+     record it opens. */
+  const CODE_KEY = 'impkt.pilot.code';
+
+  /* Beat 1 is over. The class it takes with it is the one that locks the document
+     to the window on a phone; from here on the page is the briefing and the
+     briefing scrolls. Idempotent, because both routes out of the gate call it. */
+  function ungate() {
+    document.documentElement.classList.remove('gated');
+  }
+
   let store = null;
   async function activate(raw) {
     const code = normalise(raw);
     if (code.length < 10) return { error: 'A code is ten characters. Check the card or the email.' };
 
+    /* `offline` marks the one failure that says nothing about the code. It is
+       read by resume(): a pilot in a gym basement has not been taken off the
+       programme, so a remembered code survives this and only this. */
     try { store = store || await fetch('../pilots.json', { cache: 'no-store' }).then(r => r.json()); }
-    catch { return { error: 'Could not reach the pilot list. Try again in a moment.' }; }
+    catch { return { error: 'Could not reach the pilot list. Try again in a moment.', offline: true }; }
 
     const material = await crypto.subtle.importKey(
       'raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
@@ -2627,8 +2674,12 @@
      out of text nodes rather than markup: a name is data, and data going through
      innerHTML is a bug waiting for a pilot with a bracket in their name. */
   function setTitle(text) {
+    /* Kept whole on the element, because the two-line version cannot be read
+       back: two spans with no whitespace between them make textContent
+       "RodrigoRio-Tinto", and the space is not recoverable from that. */
+    title.dataset.full = text;
     title.textContent = '';
-    const rows = nameLines(text);
+    const rows = titleSettled ? [text] : nameLines(text);
     if (rows.length < 2) { title.textContent = text; return; }
     rows.forEach(row => {
       const line = document.createElement('span');
@@ -2636,6 +2687,44 @@
       line.textContent = row;
       title.appendChild(line);
     });
+  }
+
+  /* Whether the landed name has stopped being an arrival and become a heading.
+     On a phone both copies of the name are set on two lines for the flight, and
+     they have to be: the flight scales the flying copy to the landed one by the
+     ratio of their measured widths, and that ratio is only their size ratio if
+     the two are the same shape. So the landing is stacked, like the name that
+     flew into it, and then the heading goes onto one line.
+
+     Which is also the right order for what the two settings mean. Stacked and
+     huge, it is a person arriving. Side by side and small, it is the title of the
+     page underneath it — and on a phone it is 70px of height handed back to the
+     briefing it heads.
+
+     Once true it stays true, including across a rotation: setTitle is called
+     again on resize, and the two-line setting belongs to a flight that has
+     already happened. */
+  let titleSettled = false;
+
+  function oneLineTitle() {
+    titleSettled = true;
+    setTitle(title.dataset.full || '');
+    fitTitle();
+  }
+
+  /* The same change, made to be watched. A heading that changes shape jumps, and
+     the jump is 70px of the page moving, so it goes out and comes back on the
+     opacity transition the element already has rather than switching under the
+     eye. Called a beat after the landing, so the reflow happens inside the
+     movement the cards are already making instead of as an event of its own. */
+  function settleTitle() {
+    if (titleSettled) return;
+    /* Nothing to watch if it was never stacked, which is every window wider than
+       a phone. Marked settled anyway, so narrowing the window afterwards gives a
+       heading rather than putting the arrival back. */
+    if (reduced || !title.querySelector('.tl')) { oneLineTitle(); return; }
+    title.classList.remove('lit');
+    setTimeout(() => { oneLineTitle(); title.classList.add('lit'); }, 160);
   }
 
   /* The landing slot, sized to the window the same way the flying copy is. The
@@ -2702,6 +2791,11 @@
       nameEl.classList.remove('lit');
       mark.classList.remove('away');
       requestAnimationFrame(() => hub.classList.add('revealed'));
+      /* And then it stops being an arrival. See settleTitle: held back until the
+         cards are on their way in, because a heading that reflows on its own
+         reads as a jolt and one that reflows inside a movement reads as the page
+         settling. */
+      setTimeout(settleTitle, 240);
       /* Dropped once the flight is over so the landed copy is re-rasterised at
          its own size instead of held on a composited layer. */
       nameEl.style.willChange = '';
@@ -5336,7 +5430,9 @@
 
   $('back-to-brief').addEventListener('click', () => show(brief));
 
-  function run(pilot) {
+  /* `straight` skips the choreography: it is the second and every later launch,
+     where the code was remembered and there was no press. See resume(). */
+  function run(pilot, straight) {
     PILOT = pilot;
     document.title = pilot.first + ', Impkt test pilot';
     /* The landed name is the page's own heading now rather than a corner label,
@@ -5353,13 +5449,20 @@
     $('fact-gym').textContent = pilot.gym || 'Not set';
 
     /* Reduced motion gets the same page and none of the choreography: no
-       clearing, no flight, no click. The hub still has to be laid out and
-       measured, though, because the title is sized to fit the window. */
-    if (reduced) {
+       clearing, no flight, no click. A remembered code gets the same treatment
+       for a different reason — an arrival is a thing that happens once, and the
+       fourth time you open the app today you want the drills.
+
+       The hub still has to be laid out and measured, though, because the title is
+       sized to fit the window. oneLineTitle before that and not after: it rebuilds
+       the heading, and fitting the version that is about to be thrown away sets
+       the wrong size. */
+    if (reduced || straight) {
       stage.style.display = 'none';
+      ungate();
       bloom.classList.add('settled');
       hub.hidden = false;
-      fitTitle();
+      oneLineTitle();
       title.classList.add('lit');
       hub.classList.add('revealed');
       return;
@@ -5375,6 +5478,7 @@
          screen tall, and leaving it in place would park the pilot's page one
          viewport below the fold, under a heading pointing at nothing. */
       stage.style.display = 'none';
+      ungate();
       const letters = split(pilot.name);
       fitName();
       paintRamp();
@@ -5417,7 +5521,15 @@
 
     const result = await activate(field.value);
 
-    if (result.pilot) { note.textContent = ''; run(result.pilot); return; }
+    if (result.pilot) {
+      note.textContent = '';
+      /* Only a code that worked is kept, which is why this is here and not in the
+         input handler. */
+      try { localStorage.setItem(CODE_KEY, normalise(field.value)); }
+      catch (err) { /* private mode: they will type it again next time */ }
+      run(result.pilot);
+      return;
+    }
     note.textContent = result.error;
     note.classList.add('error');
     submit.disabled = false; field.disabled = false;
@@ -5432,6 +5544,56 @@
     field.value = normalise(fromLink).slice(0, 10).replace(/(.{5})(.+)/, '$1-$2');
     note.textContent = 'Code filled from your link. Press Activate.';
   }
+  /* An empty ?c= is the way back out, the same way an empty ?sink= is. The code
+     is remembered from here on, so there has to be one string that forgets it:
+     a shared laptop in a gym, a pilot handing the page to the next pilot, or a
+     code being reissued. Cleared before resume() reads it, which is the only
+     ordering that works. */
+  if (fromLink === '') {
+    try { localStorage.removeItem(CODE_KEY); } catch (err) { /* already gone */ }
+  }
+
+  /* Once, and then never again.
+     The code is a door, not a password. It proves a person is on the list, and a
+     person who has already proved that should open the app and be in it rather
+     than typing ten characters twice a day for six weeks.
+
+     What is stored is the code, not the pilot record it decrypts, and that is the
+     interesting decision. Two reasons, both practical. It is one secret instead
+     of two, so there is one thing to clear and nothing that can disagree with
+     itself. And it is re-checked against pilots.json on every launch, so a record
+     that changes — a serial finally filled in, a gym corrected, a note added —
+     arrives on the next open instead of being shadowed by a stale copy the page
+     kept of somebody. The whole cost is one PBKDF2 derivation, which is the same
+     work the press did.
+
+     A code the list no longer knows is thrown away and the gate comes back with
+     the reason on it. That is the honest outcome: a pilot whose access was pulled
+     should be told, not silently held in a page that no longer has a record
+     behind it.
+
+     Nothing is shown while it checks. The gate is a few hundred milliseconds from
+     being replaced and a "Checking…" that flashes past is worse than a blank
+     moment during a launch. */
+  async function resume() {
+    let saved = '';
+    try { saved = localStorage.getItem(CODE_KEY) || ''; } catch (err) { return; }
+    if (!saved) return;
+
+    block.style.visibility = 'hidden';
+    const result = await activate(saved);
+    if (result.pilot) { run(result.pilot, true); return; }
+
+    /* The list was not reachable, which is a fact about the network. The code is
+       kept and the gate says so; pressing Activate retries. */
+    if (!result.offline) {
+      try { localStorage.removeItem(CODE_KEY); } catch (err) { /* nothing to undo */ }
+    }
+    block.style.visibility = '';
+    note.textContent = result.error;
+    note.classList.add('error');
+  }
+  resume();
 
   /* Where finished drills go. Set once per browser off a link and remembered, so
      the pilot never has to keep the query string around, and clearable with an

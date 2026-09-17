@@ -73,6 +73,14 @@ struct PilotPage: UIViewRepresentable {
         // page was locked to the window, where rubber-banding a page that cannot
         // move only ever looked like something had broken.
         web.scrollView.bounces = true
+        // Which is exactly why this is off. WKWebView bounces vertically whether
+        // or not there is anything to scroll, and the first screen of the page is
+        // the activation code: six short things that fit any phone with room to
+        // spare. Dragging it made the whole screen slide and spring back, which
+        // is the gesture that says "there is more below" on a screen where there
+        // is nothing below. Now the bounce belongs to the screens that scroll —
+        // the briefing and the drill list — and the ones that fit hold still.
+        web.scrollView.alwaysBounceVertical = false
         #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
         #endif
