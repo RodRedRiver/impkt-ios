@@ -117,6 +117,31 @@ jobs:
           echo "$ASC_KEY_P8" | base64 --decode > ~/private_keys/AuthKey_$ASC_KEY_ID.p8
           test -s ~/private_keys/AuthKey_$ASC_KEY_ID.p8
 
+      # Automatic signing on a fresh runner does not reuse a certificate, it makes
+      # one: the keychain is empty, so there is nothing to reuse. Apple caps a team
+      # at ten Apple Development certificates, so the eleventh push fails with
+      # "Choose a certificate to revoke. Your account has reached the maximum
+      # number of certificates", which is a signing error with nothing wrong with
+      # the signing. That is what happened after fourteen builds.
+      #
+      # Every certificate those runs left is already dead: the private key was in
+      # the runner's keychain and the runner was destroyed, so what is on the
+      # account is a public half nothing can sign with. They are swept here rather
+      # than allowed to pile up, which holds the count at one.
+      #
+      # continue-on-error, because a hiccup talking to Apple should not fail a
+      # build that has room to sign anyway. If there is no room, the archive says
+      # so in the next step and says it in Apple's own words.
+      - name: Clear the dead certificates the last builds left on the account
+        if: steps.creds.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          ASC_KEY_PATH="$HOME/private_keys/AuthKey_$ASC_KEY_ID.p8" \
+            python3 tools/asc.py sweep-certs
+
       # The build number is the run number, so every upload is higher than the
       # last one. App Store Connect rejects a repeat, and hand-bumping a number
       # in a plist is the thing everyone forgets.

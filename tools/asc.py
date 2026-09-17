@@ -7,15 +7,16 @@ this: App Store Connect wants an ES256 JWT, and neither pyjwt nor cryptography
 is installed here, so openssl signs it and the DER signature is converted to the
 raw r||s pair JOSE requires.
 
-Read only. Nothing here changes anything in App Store Connect.
-
     python3 tools/asc.py builds            newest builds and their state
     python3 tools/asc.py testers           internal groups and their testers
+    python3 tools/asc.py certs             signing certificates on the account
     python3 tools/asc.py get <path>        any GET, e.g. v1/apps
     python3 tools/asc.py invite <email>    internal group, that tester, newest build
+    python3 tools/asc.py sweep-certs [n]   revoke the dead runner certificates
 
-`invite` is the only command that changes anything, and it emails the person it
-adds. Everything else is read only.
+Two commands change something. `invite` emails the person it adds. `sweep-certs`
+revokes certificates, and what it will and will not touch is the whole of its
+docstring. Everything else is read only.
 
 The key is never printed and never leaves the machine except to Apple. Its path
 and the two ids come from the environment, or from these defaults, which are
@@ -104,6 +105,13 @@ def post(path, body):
         return json.loads(raw) if raw else {}
 
 
+def delete(path):
+    req = urllib.request.Request(API + path.lstrip("/"), method="DELETE")
+    req.add_header("Authorization", "Bearer " + token())
+    with urllib.request.urlopen(req, timeout=30, context=ssl_context()) as r:
+        r.read()
+
+
 def app_id():
     data = get("v1/apps?filter[bundleId]=" + BUNDLE_ID)
     if not data["data"]:
@@ -142,6 +150,71 @@ def testers():
                                         ta.get("email"), ta.get("state")))
         if not people["data"]:
             print("   nobody in this group")
+
+
+# A certificate this script is allowed to revoke has both of these. Neither is
+# decoration: the type keeps it away from anything that ships an app, and the
+# display name is what Apple puts on a certificate created through the API, which
+# is the only kind CI makes. One made by a person in Xcode is named after them and
+# is never matched here.
+SWEEPABLE_TYPE = "DEVELOPMENT"
+SWEEPABLE_NAME = "Created via API"
+
+
+def certs():
+    for c in get("v1/certificates?limit=200")["data"]:
+        a = c["attributes"]
+        mine = (a.get("certificateType") == SWEEPABLE_TYPE
+                and a.get("displayName") == SWEEPABLE_NAME)
+        print("%-14s %-24s expires %s  %s"
+              % (a.get("certificateType"), a.get("displayName"),
+                 (a.get("expirationDate") or "")[:10],
+                 "sweepable" if mine else "left alone"))
+
+
+def sweep_certs(keep=0):
+    """Revoke the Apple Development certificates the CI runners left behind.
+
+    Why this has to exist: the Archive step signs with automatic signing on a
+    fresh GitHub runner, and a runner with an empty keychain does not reuse a
+    certificate, it makes one. Apple caps a team at ten, so the eleventh push
+    fails with "choose a certificate to revoke" — a signing error with nothing
+    wrong with the signing.
+
+    Why it is safe: every certificate it makes is dead the moment the run ends.
+    The private key lived in that runner's keychain and the runner is destroyed,
+    so what is left on the account is a public half nothing on earth can sign
+    with. Revoking one cannot affect a build that already uploaded either, since
+    a certificate is only consulted at signing time.
+
+    What it will not touch, ever: anything that is not DEVELOPMENT, and anything
+    whose display name is not the one Apple gives an API-created certificate. A
+    distribution certificate and a certificate somebody made in Xcode on their
+    own Mac are both invisible to this.
+
+    `keep` holds back that many of the newest, which is here for running it by
+    hand while wondering whether it is about to do something regrettable.
+    """
+    all_certs = get("v1/certificates?limit=200")["data"]
+    mine = [c for c in all_certs
+            if c["attributes"].get("certificateType") == SWEEPABLE_TYPE
+            and c["attributes"].get("displayName") == SWEEPABLE_NAME]
+    others = len(all_certs) - len(mine)
+
+    mine.sort(key=lambda c: c["attributes"].get("expirationDate") or "", reverse=True)
+    doomed = mine[keep:]
+
+    print("%d certificate(s) on the account: %d from a runner, %d left alone"
+          % (len(all_certs), len(mine), others))
+    if not doomed:
+        print("nothing to sweep")
+        return
+
+    for c in doomed:
+        delete("v1/certificates/" + c["id"])
+        print("revoked the runner certificate expiring %s"
+              % (c["attributes"].get("expirationDate") or "")[:10])
+    print("%d slot(s) free for this build" % len(doomed))
 
 
 def invite(email, group_name="Bench"):
@@ -191,8 +264,11 @@ if __name__ == "__main__":
     try:
         if   what == "builds":  builds()
         elif what == "testers": testers()
+        elif what == "certs":   certs()
         elif what == "get":     print(json.dumps(get(sys.argv[2]), indent=2))
         elif what == "invite":  invite(sys.argv[2])
+        elif what == "sweep-certs":
+            sweep_certs(int(sys.argv[2]) if len(sys.argv) > 2 else 0)
         else: sys.exit(__doc__)
     except urllib.error.HTTPError as e:
         sys.exit("App Store Connect said %s: %s" % (e.code, e.read().decode()[:600]))
