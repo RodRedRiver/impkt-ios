@@ -103,6 +103,17 @@ final class Updater: NSObject, ObservableObject {
         // ignored in Legacy DFU, which is what these wraps speak, so it did
         // nothing at all and the library sat waiting for a peripheral that had
         // already come back under another identity.
+        //
+        // The address does NOT change on this path, which is the opposite of what
+        // this code assumed. Adafruit's BLEDfu stashes peer data in RAM at
+        // 0x20007F80 before it resets, and the bootloader, finding that data valid,
+        // skips the `addr.addr[0] += 1` it would otherwise apply. So the wrap comes
+        // back in its bootloader on its own address, as the same iOS peripheral.
+        //
+        // Scanning is still what the library should do, because it is the only way
+        // to know the bootloader is actually up and advertising before trying to
+        // talk to it, and the selector matches on the advertised name. But nothing
+        // here may assume a new identity, and the rest of the app no longer does.
         initiator.forceScanningForNewAddressInLegacyDfu = true
         initiator.peripheralSelector = BootloaderSelector()
         // Ten seconds is the library's default and it is not enough here: a wrap

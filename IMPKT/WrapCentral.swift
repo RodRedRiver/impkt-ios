@@ -205,14 +205,21 @@ final class WrapCentral: NSObject, ObservableObject {
     }
 
     private func remember(_ id: UUID) {
-        // Never a bootloader. Its Bluetooth address is the board's address plus
-        // one, so iOS files it as a DIFFERENT peripheral: remembering it stores an
-        // identifier that disappears the moment the wrap is repaired and never
-        // returns. The pilot page then asks to connect to a wrap that does not
-        // exist, waits out the deadline and reports a wrap that will not connect,
-        // while the real one advertises happily a foot away. Re-flashing does not
-        // clear it either, which is exactly how this looks like a dead board.
-        if found.first(where: { $0.id == id })?.inBootloader == true { return }
+        // A wrap in bootloader mode IS the wrap, and this used to refuse to
+        // remember it on the belief that it was a foreign identifier.
+        //
+        // That belief was wrong for the only path the app ever takes. Adafruit's
+        // BLEDfu, which is what the phone writes to when it asks a wrap to jump,
+        // first stashes peer data in RAM at 0x20007F80: the phone's address, the
+        // GATT sys_attr table and a CRC. The bootloader reads that back, and
+        // finding it valid it SKIPS the `addr.addr[0] += 1` that would otherwise
+        // move it off the board's own Bluetooth address. So the bootloader comes
+        // up on the same address and iOS files it as the same peripheral.
+        //
+        // The address only changes when nothing handed over peer data, which means
+        // a jump started from the cable, or a restart after the application was
+        // already erased. In the second case the bootloader is in USB mode and not
+        // advertising at all, so the app never sees it either way.
         var all = UserDefaults.standard.stringArray(forKey: knownKey) ?? []
         if !all.contains(id.uuidString) {
             all.append(id.uuidString)
@@ -293,11 +300,15 @@ final class WrapCentral: NSObject, ObservableObject {
                 var seen = Set<UUID>()
                 for p in list where !seen.contains(p.identifier) {
                     seen.insert(p.identifier)
-                    // Remembered from a previous build, before a bootloader was
-                    // refused entry. Offering it hands the page a wrap that cannot
-                    // punch, so it is dropped here and forgotten on the way past.
+                    // A wrap sitting in its bootloader cannot punch, so it is not
+                    // offered to the pilot page. It is NOT forgotten, though, and it
+                    // used to be: the bootloader keeps the board's own Bluetooth
+                    // address when the app asked it to jump, so forgetting it threw
+                    // away the real wrap. That is permanent, it survives putting the
+                    // firmware back, and it is what made a repaired wrap still
+                    // refuse to connect. Being in the bootloader is a state a wrap
+                    // passes through, not a different wrap.
                     if self.found.first(where: { $0.id == p.identifier })?.inBootloader == true {
-                        self.forget(p.identifier)
                         continue
                     }
                     self.peripherals[p.identifier] = p
@@ -612,7 +623,10 @@ extension WrapCentral: CBPeripheralDelegate {
         let hasPunch = (p.services ?? []).contains { $0.uuid == WrapCentral.punchService }
         if !hasPunch {
             manager.cancelPeripheralConnection(p)
-            forget(p.identifier)
+            // Deliberately NOT forgotten. This is what a wrap in its bootloader
+            // looks like, and the bootloader answers on the board's own address, so
+            // forgetting it here threw away the real wrap for good and no amount of
+            // putting the firmware back brought it back.
             reply(false, ["name": "NotFoundError",
                           "message": "that wrap connected but is not offering the punch "
                                    + "service, so it is either still in update mode or "
