@@ -74,6 +74,11 @@ final class WrapCentral: NSObject, ObservableObject {
     private var queued: [() -> Void] = []
 
     private let knownKey = "impkt.known.wraps"
+    /// Identifiers that have completed a connect at least once. Kept so a stale
+    /// remembered identifier can be thrown away on a timeout without also throwing
+    /// away a wrap that is merely asleep, which would send the pilot back through
+    /// the browser's grant dialog for no reason.
+    private let provenKey = "impkt.proven.wraps"
 
     private override init() {
         super.init()
@@ -156,6 +161,14 @@ final class WrapCentral: NSObject, ObservableObject {
     }
 
     private func remember(_ id: UUID) {
+        // Never a bootloader. Its Bluetooth address is the board's address plus
+        // one, so iOS files it as a DIFFERENT peripheral: remembering it stores an
+        // identifier that disappears the moment the wrap is repaired and never
+        // returns. The pilot page then asks to connect to a wrap that does not
+        // exist, waits out the deadline and reports a wrap that will not connect,
+        // while the real one advertises happily a foot away. Re-flashing does not
+        // clear it either, which is exactly how this looks like a dead board.
+        if found.first(where: { $0.id == id })?.inBootloader == true { return }
         var all = UserDefaults.standard.stringArray(forKey: knownKey) ?? []
         if !all.contains(id.uuidString) {
             all.append(id.uuidString)
@@ -167,6 +180,17 @@ final class WrapCentral: NSObject, ObservableObject {
         let all = (UserDefaults.standard.stringArray(forKey: knownKey) ?? [])
             .filter { $0 != id.uuidString }
         UserDefaults.standard.set(all, forKey: knownKey)
+    }
+
+    private func markProven(_ id: UUID) {
+        var all = UserDefaults.standard.stringArray(forKey: provenKey) ?? []
+        guard !all.contains(id.uuidString) else { return }
+        all.append(id.uuidString)
+        UserDefaults.standard.set(all, forKey: provenKey)
+    }
+
+    private func isProven(_ id: UUID) -> Bool {
+        (UserDefaults.standard.stringArray(forKey: provenKey) ?? []).contains(id.uuidString)
     }
 
     private func note(_ p: CBPeripheral, rssi: Int?, name: String?, uuids: [CBUUID] = []) {
@@ -206,6 +230,13 @@ final class WrapCentral: NSObject, ObservableObject {
                 var seen = Set<UUID>()
                 for p in list where !seen.contains(p.identifier) {
                     seen.insert(p.identifier)
+                    // Remembered from a previous build, before a bootloader was
+                    // refused entry. Offering it hands the page a wrap that cannot
+                    // punch, so it is dropped here and forgotten on the way past.
+                    if self.found.first(where: { $0.id == p.identifier })?.inBootloader == true {
+                        self.forget(p.identifier)
+                        continue
+                    }
                     self.peripherals[p.identifier] = p
                     var d: [String: Any] = ["id": p.identifier.uuidString]
                     if let n = self.advNames[p.identifier] ?? p.name { d["name"] = n }
@@ -323,6 +354,13 @@ final class WrapCentral: NSObject, ObservableObject {
         // standing, it completes minutes later when the wrap next wakes, and the
         // app connects to a wrap nobody asked for any more.
         manager.cancelPeripheralConnection(p)
+        // An identifier that has never once connected and does not answer now is
+        // almost certainly not a wrap at all: the usual way to acquire one is a
+        // failed update, which leaves the bootloader's address remembered under a
+        // peripheral that no longer exists. Dropped, so the page goes back to
+        // scanning and finds the real board instead of retrying a ghost for ever.
+        // A wrap that HAS connected before is kept: that one is merely asleep.
+        if !isProven(p.identifier) { forget(p.identifier) }
         reply(false, ["name": "NetworkError",
                       "message": "the wrap did not answer within "
                                + "\(Int(WrapCentral.connectTimeout)) seconds, which usually "
@@ -364,7 +402,14 @@ final class WrapCentral: NSObject, ObservableObject {
 
     private func settlePick(force: Bool = false) {
         guard let waiter = pickWaiter else { return }
-        let fresh = found.filter { Date().timeIntervalSince($0.seen) < 6 }
+        // Bootloaders are excluded outright. The scan asks for the DFU service as
+        // well as the punch service, because the update screen has to be able to
+        // see a stranded wrap, and a bootloader advertises every 25 ms against the
+        // firmware's 803 ms. So on strength it wins this pick every time, and it is
+        // the one device in the room that cannot report a punch.
+        let fresh = found.filter {
+            Date().timeIntervalSince($0.seen) < 6 && !$0.inBootloader
+        }
         if fresh.isEmpty {
             if force || (pickDeadline.map { Date() > $0 } ?? false) {
                 pickWaiter = nil
@@ -399,6 +444,11 @@ extension WrapCentral: CBCentralManagerDelegate {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String
         let uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
         note(p, rssi: RSSI.intValue, name: name, uuids: uuids)
+        // The pilot page is never told about a bootloader. It is in `found` because
+        // the update screen needs it, but to the page it would be a wrap that can
+        // be listed, chosen and connected to, and then reports no punches. The one
+        // screen that can do anything with it already has it.
+        if found.first(where: { $0.id == p.identifier })?.inBootloader == true { return }
         emit?("advertisement", [
             "id": p.identifier.uuidString,
             "name": advNames[p.identifier] ?? p.name ?? "",
@@ -491,6 +541,23 @@ extension WrapCentral: CBPeripheralDelegate {
                                    + "would list what they can do"])
             return
         }
+        // A link with no punch service on it cannot report a punch, and it is worth
+        // naming rather than letting the page discover it as five separate
+        // NotFoundErrors later. Two things produce it: a bootloader answering, and
+        // iOS handing back a GATT table it cached while the wrap WAS a bootloader.
+        // Both are fixed the same way, and neither is the board being broken.
+        let hasPunch = (p.services ?? []).contains { $0.uuid == WrapCentral.punchService }
+        if !hasPunch {
+            manager.cancelPeripheralConnection(p)
+            forget(p.identifier)
+            reply(false, ["name": "NotFoundError",
+                          "message": "that wrap connected but is not offering the punch "
+                                   + "service, so it is either still in update mode or "
+                                   + "this phone is holding a stale copy of its services. "
+                                   + "Turn Bluetooth off and on, then connect again."])
+            return
+        }
+        markProven(p.identifier)
         var services: [[String: Any]] = []
         for s in p.services ?? [] {
             let chars: [[String: Any]] = (s.characteristics ?? []).map { c in

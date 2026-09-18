@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import CoreBluetooth
 import NordicDFU
 
@@ -23,6 +24,14 @@ final class Updater: NSObject, ObservableObject {
     @Published var progress: Double = 0
     @Published var detail: String = ""
     @Published var target: FoundWrap?
+    /// The DFU library's own running commentary, kept on the phone rather than
+    /// only in NSLog, where nobody holding the phone can reach it.
+    ///
+    /// This is not a nicety. An update that fails part way has already erased the
+    /// wrap's application, so the wrap is then stuck in its bootloader and the
+    /// only question that matters is which step it died on. Without the log,
+    /// "the update did not finish" is the whole of what anybody can report.
+    @Published private(set) var log: [String] = []
 
     private var controller: DFUServiceController?
     /// Kept so the failed state can offer another go at the same wrap without
@@ -62,6 +71,7 @@ final class Updater: NSObject, ObservableObject {
         lastTarget = wrap
         phase = .connecting
         progress = 0
+        log.removeAll()
         detail = wrap.inBootloader ? "Picking the update back up" : "Waking the wrap's bootloader"
 
         let initiator = DFUServiceInitiator().with(firmware: firmware)
@@ -170,11 +180,14 @@ extension Updater: DFUServiceDelegate {
     }
 
     func dfuError(_ error: DFUError, didOccurWithMessage message: String) {
-        // Said in full, including the library's own message. An update that fails
-        // silently leaves somebody in another country holding a board they think
-        // is broken.
-        phase = .failed(message)
+        // Said in full, including the library's own message and the error case it
+        // came from. An update that fails silently leaves somebody in another
+        // country holding a board they think is broken, and "failed" on its own
+        // does not distinguish a bootloader that was never found from an image
+        // the bootloader rejected after writing all of it.
+        phase = .failed("\(message) (\(error))")
         detail = ""
+        log.append("ERROR \(error): \(message)")
         controller = nil
         // Back to scanning straight away, and this is not housekeeping: if the
         // jump succeeded and only the upload failed, the wrap is sitting in its
@@ -196,6 +209,12 @@ extension Updater: DFUProgressDelegate {
 extension Updater: LoggerDelegate {
     func logWith(_ level: LogLevel, message: String) {
         NSLog("DFU [\(level.rawValue)] \(message)")
+        // loggerQueue defaults to the main queue, which is where every other
+        // published property here is written from, so this needs no hop.
+        // Trimmed from the front: the tail is the part that says what went wrong,
+        // and an unbounded log on a retried update grows without limit.
+        log.append(message)
+        if log.count > 300 { log.removeFirst(log.count - 300) }
     }
 }
 
@@ -248,9 +267,28 @@ struct UpdateView: View {
                                  : "The wrap kept the firmware it had and still works. Shake it "
                                    + "awake, wait for it to appear below, and press Update again.")
                                 .font(.caption).foregroundColor(.secondary)
+                            if stranded {
+                                Text("Leave it powered. If it loses power in this state it "
+                                     + "comes back needing a cable instead of the app.")
+                                    .font(.caption).foregroundColor(.secondary)
+                            }
                             if updater.lastTarget != nil {
                                 Button(stranded ? "Finish update" : "Try again") { updater.retry() }
                                     .font(.footnote)
+                            }
+                            // The log, on the screen, because the phone is the only
+                            // thing in the room when this fails and the step it died
+                            // on is the whole diagnosis.
+                            if !updater.log.isEmpty {
+                                Text(updater.log.suffix(6).joined(separator: "\n"))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .textSelection(.enabled)
+                                Button("Copy the whole log") {
+                                    UIPasteboard.general.string =
+                                        updater.log.joined(separator: "\n")
+                                }
+                                .font(.footnote)
                             }
                         }
                     }
