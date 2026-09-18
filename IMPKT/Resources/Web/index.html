@@ -3450,9 +3450,6 @@
   const FOUND = new Map();
   let scanning = null;
   let scanTimer = null;
-  /* Set once the narrowed chooser has come back empty, so the next press shows
-     every wrap rather than only the hand that is missing. See grantOne(). */
-  let grantWide = false;
   /* Devices this page is listening to one at a time, by id, and the one handle
      that stops all of them. */
   const watched = new Map();
@@ -3480,18 +3477,44 @@
   }
   const inUse = d => WRAPS.left.device === d || WRAPS.right.device === d;
 
-  /* Which hand a wrap is on, from its name and nothing else.
-     This is the whole reason the firmware puts the letter in the name rather than
-     somewhere roomier. A name is the one thing Web Bluetooth tells a page about a
-     device it has permission for WITHOUT connecting to it and without a scan:
-     getDevices() hands back a device and its name, full stop. So the hand is
-     known before anything is opened, which is what lets this page bring up both
-     wraps by itself instead of asking a pilot to identify a black band.
-     An empty answer means a wrap on firmware older than v2.3, or one nobody has
-     told yet. Those still work, and they are the only ones ever asked about. */
+  /* Which hand a wrap is on, answered before anything is connected, from two
+     sources in order.
+
+     A wrap still carrying the letter in its name says so in its name, and a name
+     is the one thing Web Bluetooth tells a page about a device it has permission
+     for WITHOUT connecting to it: getDevices() hands back a device and its name,
+     full stop. Otherwise the answer is what the wrap itself said last time it was
+     connected: characteristic 0x09 carries the hand, and connectWrap writes it
+     down here against the device id as soon as it reads it.
+
+     The name used to be the only source, and then a board turned up named
+     "Impktband 1". It matched nothing, so it was filtered out of the permitted
+     list, hidden from the scan, missing from the browser's own picker, and the
+     page went back to asking a pilot which hand a black band was on: every
+     symptom of a broken wrap, on a wrap that was working perfectly. A label is
+     something a person types. Identity comes from the wrap.
+
+     An empty answer means a wrap this browser has never had connected, or one on
+     firmware older than v2.3. Those still work, and they are the only ones ever
+     asked about. */
+  const HANDS_KEY = 'impkt.wrap.hands';
+  let handMemo = {};
+  try { handMemo = JSON.parse(localStorage.getItem(HANDS_KEY) || '{}') || {}; }
+  catch (err) { handMemo = {}; }
+
+  function rememberHand(device, side) {
+    if (!device || !device.id) return;
+    if (side !== 'left' && side !== 'right') return;
+    if (handMemo[device.id] === side) return;
+    handMemo[device.id] = side;
+    try { localStorage.setItem(HANDS_KEY, JSON.stringify(handMemo)); }
+    catch (err) { /* private browsing: this session still knows, the next forgets */ }
+  }
+
   const handOf = d => {
     const m = /^BOXING-01\s*([LR])$/i.exec(((d && d.name) || '').trim());
-    return m ? (m[1].toUpperCase() === 'L' ? 'left' : 'right') : '';
+    if (m) return m[1].toUpperCase() === 'L' ? 'left' : 'right';
+    return (d && d.id && handMemo[d.id]) || '';
   };
   const otherHand = side => side === 'left' ? 'right' : 'left';
   const handWord = side => side === 'left' ? 'Left hand' : 'Right hand';
@@ -3502,8 +3525,12 @@
   async function permitted() {
     if (!navigator.bluetooth || !navigator.bluetooth.getDevices) return [];
     try {
-      const known = await navigator.bluetooth.getDevices();
-      return known.filter(d => !d.name || /^BOXING/i.test(d.name));
+      /* Returned whole, with no filter on the name. Everything in this list was
+         permitted through this page's own picker, which asks for the punch
+         service, so there is nothing in it that is not a wrap. A name test here
+         could only ever remove one: a renamed wrap, which is exactly the wrap a
+         pilot is holding and wondering why the page cannot see it. */
+      return await navigator.bluetooth.getDevices();
     } catch (err) {
       return [];   /* not implemented everywhere; the scan covers it */
     }
@@ -3608,16 +3635,50 @@
      hand is still empty gets connected, in one pass, with no dialog and nothing
      asked. On a second session that is both of them and the pilot presses nothing.
 
-     A wrap that does not say gets left alone rather than guessed at. Putting a
-     right-hand wrap in the left slot would silently mislabel every punch it ever
-     records, which is worse than a question. */
+     A wrap this page cannot place yet is still brought up, on whichever hand is
+     free, because the wrap itself settles it the moment the link is open: connectWrap
+     reads characteristic 0x09 and moves it to the hand it claims. That is how a wrap
+     this browser has never met, or one that has been given a name, connects without
+     anybody being asked anything.
+
+     The exception is a wrap that turns out not to know either, which means firmware
+     older than v2.3 or a band nobody has ever told. Leaving that one on a hand this
+     page picked would silently mislabel every punch it records, so it is put back
+     and its row keeps the two buttons: that wrap is the only one ever asked about,
+     and answering writes the answer into the band for good. See assign(). */
+  let bringing = false;
   async function bringUpPair() {
+    /* One sweep at a time. A scan with keepRepeatedDevices on can ask for a sweep
+       every few hundred milliseconds while a connect from the last one is still
+       open, and two sweeps racing hand the same free slot to two wraps, or open two
+       links to one wrap. Neither fails cleanly: they fail as "would not connect" on
+       a wrap that was fine. */
+    if (bringing) return 0;
+    bringing = true;
+    try {
+      return await bringUpSweep();
+    } finally {
+      bringing = false;
+    }
+  }
+
+  async function bringUpSweep() {
     let up = 0;
     for (const d of await permitted()) {
+      if (inUse(d)) continue;
       const says = handOf(d);
-      if (!says || WRAPS[says].device || inUse(d)) continue;
+      if (says && WRAPS[says].device) continue;
+      const free = !WRAPS.left.device ? 'left' : !WRAPS.right.device ? 'right' : '';
+      const put = says || free;
+      if (!put) break;                     /* both hands are up: nothing to place */
       sawDevice(d, null);
-      if (await connectWrap(says, d, null)) up++;
+      if (!await connectWrap(put, d, null)) continue;
+      const landed = sideOf(d);
+      if (!says && landed && !(WRAPS[landed].ident && WRAPS[landed].ident.hand)) {
+        drop(landed, 'Not connected');
+        continue;
+      }
+      up++;
     }
     if (up) renderFound();
     return up;
@@ -3631,15 +3692,46 @@
   });
 
   /* Choosing a hand is the whole point of this list, so it is also where the
-     connection is made: one press says which hand and connects it. */
+     connection is made: one press says which hand and connects it.
+
+     And the press is told to the wrap, not just to this page. A wrap that has never
+     been told which hand it is on is the only wrap anybody is ever asked about, and
+     answering the question writes the answer into the band, where it survives the
+     battery going flat, this browser being cleared and a different phone entirely.
+     So the question is asked once per wrap in its life rather than once per
+     browser. If the write is refused the session still runs; the page has the
+     answer either way, and the row is there to be pressed again. */
   async function assign(side, f) {
     findState('Connecting the ' + side + ' hand');
     const ok = await connectWrap(side, f.device, f.rssi);
     renderFound();
     if (!ok) { findState('That wrap would not connect'); return; }
+    await tellWrapItsHand(side);
     findState(WRAPS.left.device && WRAPS.right.device
       ? 'Both wraps connected. Go to the drills.'
       : 'One wrap connected. Now the other hand.');
+  }
+
+  /* Control opcode 0x30 with the letter, which is the firmware's own HAND command.
+     Only ever sent for a wrap that did not already know: overwriting a hand a wrap
+     is sure of, because this page put it in the slot that happened to be free,
+     would be this page telling the wrap a guess. */
+  async function tellWrapItsHand(side) {
+    const w = WRAPS[side];
+    if (!w || !w.device || (w.ident && w.ident.hand)) return;
+    try {
+      const svc = await w.device.gatt.getPrimaryService(BLE.SERVICE);
+      const ctrl = await svc.getCharacteristic(BLE.CTRL);
+      const letter = side === 'left' ? 0x4C : 0x52;
+      await ctrl.writeValue(new Uint8Array([0x30, letter]));
+      w.ident = Object.assign({ setId: 0, unitId: 0 }, w.ident || {}, { hand: side });
+      rememberHand(w.device, side);
+    } catch (err) {
+      /* Older firmware has no control characteristic, and a read-only build
+         refuses the write. Both mean the same thing here: this browser remembers
+         and the wrap does not. */
+      rememberHand(w.device, side);
+    }
   }
 
   async function findReady() {
@@ -3714,17 +3806,20 @@
     if (sideOf(e.device)) return;
 
     const says = handOf(e.device);
-    /* A permitted wrap that says which hand it is on never needs a press. One
-       that has never been introduced to this browser cannot be connected from a
-       scan no matter what it says, so it falls through to the list. */
+    /* A permitted wrap never needs a press, whether or not this page can already
+       name its hand: the sweep connects it and the wrap says which hand it is on
+       once the link is open. A wrap this browser has never been introduced to
+       cannot be connected from a scan whatever it says, and the sweep leaves it
+       alone, so it falls through to the list below. */
+    bringUpSoon();
     if (says && !WRAPS[says].device) {
-      bringUpSoon();
       findState('Found the ' + says + ' wrap. Connecting it.');
       return;
     }
-    /* No letter in the name: firmware older than v2.3, or a wrap nobody has told.
-       These are identical to each other on air, so the old trick for telling them
-       apart is still the only one there is. */
+    /* Nothing known about the hand yet, and nothing connected either, so this is a
+       wrap the browser has never met or one on firmware too old to say. Those are
+       identical to each other on air, so the old trick for telling them apart is
+       still the only one there is. */
     findState(FOUND.size === 1
       ? 'Found one, and it does not say which hand it is on. Choose.'
       : 'Found ' + FOUND.size + ', and they do not say which hand they are on. Pick '
@@ -3763,11 +3858,13 @@
     if (navigator.bluetooth.requestLEScan) {
       try {
         navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
-        /* namePrefix rather than the service, because the firmware puts its name
-           in the scan response and a scan sees both halves. keepRepeatedDevices
-           so the strength keeps updating while somebody moves. */
+        /* The service, not the name. Every wrap puts the punch service UUID in the
+           advertisement proper, whatever it is called, and the name sits in the
+           scan response where a pilot's own label lives. Filtering on the name
+           lost any wrap that had been given one. keepRepeatedDevices so the
+           strength keeps updating while somebody moves. */
         scanning = await navigator.bluetooth.requestLEScan({
-          filters: [{ namePrefix: 'BOXING' }], keepRepeatedDevices: true
+          filters: [{ services: [BLE.SERVICE] }], keepRepeatedDevices: true
         });
         scanned = true;
       } catch (err) {
@@ -3821,54 +3918,43 @@
   async function grantOne() {
     let device;
     /* The dialog is the browser's and it returns exactly one device per press, so
-       one press can never bring up a pair. What it can do is not ask a question it
-       already knows the answer to: with one hand already connected, the filter is
-       narrowed to the name of the hand that is missing, and the only thing in the
-       list is the wrap the pilot is actually looking for. */
-    const need = grantWide ? ''
-               : WRAPS.left.device && !WRAPS.right.device ? 'R'
-               : WRAPS.right.device && !WRAPS.left.device ? 'L' : '';
+       one press can never bring up a pair. The filter is the punch service, and it
+       stays the punch service however many hands are already up.
+       It used to narrow to the name of the missing hand, which kept the list down
+       to one entry and, on any wrap that had been given a name, kept it down to
+       none: the pilot pressed the button, the browser offered an empty list, and
+       the page said the wrap was asleep when it was advertising in their hand. A
+       list with the other hand in it is the smaller problem, and it is not really
+       a problem at all, because connectWrap asks the wrap which hand it is. */
     try {
       device = await navigator.bluetooth.requestDevice({
-        filters: need
-          ? [{ name: BLE.PREFIX + need }]
-          : [{ services: [BLE.SERVICE] }, { namePrefix: BLE.PREFIX }],
+        filters: [{ services: [BLE.SERVICE] }],
         optionalServices: [BLE.SERVICE]
       });
     } catch (err) {
       if (err && (err.name === 'NotFoundError' || err.name === 'AbortError')) {
         findState('No wrap introduced');
-        if (need) {
-          /* The narrowed list can be empty for a second reason, and it is not one
-             a pilot could guess: a wrap on firmware older than v2.3 has no letter
-             in its name, so a filter looking for the missing hand hides the very
-             wrap they are holding. One press cannot be retried straight away, so
-             the next one widens instead of narrowing. */
-          grantWide = true;
-          findNote('Nothing came back. That list was narrowed to the hand you are '
-            + 'missing, so an older wrap that does not say which hand it is on '
-            + 'would not have been in it. Press again and every wrap will be.');
-        } else {
-          findNote('Nothing came back. If the browser\'s list was empty the wrap is '
-            + 'asleep: shake it again and press this once more.');
-        }
+        findNote('Nothing came back. If the browser\'s list was empty the wrap is '
+          + 'asleep: shake it again and press this once more.');
       } else {
         findState('That would not open');
         findNote(err && err.message ? err.message : String(err));
       }
       return;
     }
-    grantWide = false;
     sawDevice(device, null);
     await watchOne(device);
 
-    /* Introduced and permitted in the same breath, so a wrap that says which hand
-       it is on is connected here rather than listed and waited on. The dialog is
-       the only thing the browser insists on doing; the hand is not. */
-    const says = handOf(device);
-    if (says && !WRAPS[says].device) {
-      findState('Connecting the ' + says + ' wrap');
-      await connectWrap(says, device, null);
+    /* Introduced and connected in the same breath, on the hand it says it is on if
+       this browser already knows, and otherwise on whichever hand is free: the wrap
+       is asked once the link is open and moved if it disagrees. Nobody is asked to
+       identify a black band either way. */
+    const known = handOf(device);
+    const free  = !WRAPS.left.device ? 'left' : !WRAPS.right.device ? 'right' : '';
+    const put   = known && !WRAPS[known].device ? known : free;
+    if (put) {
+      findState('Connecting a wrap');
+      await connectWrap(put, device, null);
       renderFound();
     }
     /* And the other hand while we are here: this press has just widened what the
@@ -3876,16 +3962,22 @@
        permitted long ago and simply asleep until now. */
     await bringUpPair();
 
+    /* Which hand it ended up on, asked of the page rather than of the name: if the
+       wrap said it was the other one, it has already been moved there. */
+    const says = sideOf(device);
     const both = WRAPS.left.device && WRAPS.right.device;
     findState(both ? 'Both wraps connected.'
       : says ? 'That one is up, as the ' + says + ' hand.'
-      : 'That one is in the list now. Choose which hand it is on.');
+      : 'That one is in the list now.');
     findNote(both
       ? 'This browser knows both wraps from now on, so every session after this one '
         + 'starts with them already connected and nothing pressed.'
-      : 'This browser knows that wrap from now on, so this page will find it by '
+      : says
+      ? 'This browser knows that wrap from now on, so this page will find it by '
         + 'itself next time. One introduction per wrap, so press again for the '
-        + 'other one.');
+        + 'other one.'
+      : 'It did not open a connection this time. Shake it and press Connect on its '
+        + 'row, or press this again.');
   }
 
   $('find-go').addEventListener('click', () => {
@@ -3907,9 +3999,11 @@
      device per chooser and a pair is not one device.
 
      It is still two connections, but from firmware v2.3 it is no longer two
-     decisions. A wrap now says which hand it is on in its own name, so this page
-     opens both by itself and nobody is ever asked which wrist they just picked
-     up. See handOf() and bringUpPair().
+     decisions. A wrap says which hand it is on, so this page opens both by itself
+     and nobody is ever asked which wrist they just picked up. The wrap is asked on
+     characteristic 0x09 and the answer is kept against its device id: everything
+     here is found by service UUID and identified by that answer, never by what the
+     wrap is called. See handOf() and bringUpPair().
 
      Connecting is local and nothing here streams anywhere: the link is between
      this page and the wrap, and no punch leaves while it is open. What does leave
@@ -3919,13 +4013,15 @@
      anyone who has met a fitness app, and a page that then quietly uploaded
      would have earned the suspicion. */
   const BLE = {
-    /* A prefix, not a name. A configured wrap is BOXING-01L or BOXING-01R and one
-       that has never been told which hand it is on is still plain BOXING-01, so
-       nothing here may ever match the bare name exactly. */
-    PREFIX:  'BOXING-01',
+    /* No name or prefix here on purpose. The default is BOXING-01L or BOXING-01R,
+       a wrap nobody has told is plain BOXING-01, and a wrap somebody has named is
+       whatever they typed. Only the service UUID is the same on all of them, and it
+       is in the advertisement rather than the scan response, so it is what every
+       filter in this page asks for. */
     SERVICE: '6e2a0001-b5a3-f393-e0a9-e50e24dcca9e',
     PUNCH:   '6e2a0002-b5a3-f393-e0a9-e50e24dcca9e',
     SCORE:   '6e2a0003-b5a3-f393-e0a9-e50e24dcca9e',
+    CTRL:    '6e2a0004-b5a3-f393-e0a9-e50e24dcca9e',
     BATT:    '6e2a0007-b5a3-f393-e0a9-e50e24dcca9e',
     IDENT:   '6e2a0009-b5a3-f393-e0a9-e50e24dcca9e'
   };
@@ -4056,7 +4152,16 @@
        not behave like one must leave the panel saying "not connected" rather
        than leave a rejected promise and a row claiming a wrap it does not have. */
     try {
-      device.addEventListener('gattserverdisconnected', () => drop(side, 'Lost the wrap'));
+      /* The hand is looked up at event time rather than captured, because a wrap
+         can change hands between here and then: characteristic 0x09 below is the
+         authority on which hand this is, and a wrap that turns out to be the other
+         one is moved across rather than mislabelled. A device sitting in neither
+         slot has nothing to drop, which also stops a late disconnect from one wrap
+         clearing the panel of the wrap that has since replaced it. */
+      device.addEventListener('gattserverdisconnected', () => {
+        const s = sideOf(device);
+        if (s) drop(s, 'Lost the wrap');
+      });
       const server = await device.gatt.connect();
       const svc = await server.getPrimaryService(BLE.SERVICE);
 
@@ -4068,7 +4173,7 @@
       catch (err) { w.char = await svc.getCharacteristic(BLE.SCORE); rich = false; }
       w.rich = rich;
       w.char.addEventListener('characteristicvaluechanged',
-        e => onWrapPunch(side, e.target.value, rich));
+        e => onWrapPunch(sideOf(device) || side, e.target.value, rich));
       await w.char.startNotifications();
       w.heard = performance.now();
 
@@ -4079,14 +4184,14 @@
       try {
         w.batt = await svc.getCharacteristic(BLE.BATT);
         w.batt.addEventListener('characteristicvaluechanged',
-          e => onWrapBatt(side, e.target.value));
+          e => onWrapBatt(sideOf(device) || side, e.target.value));
         try { await w.batt.startNotifications(); } catch (err) { /* read-only build */ }
         onWrapBatt(side, await w.batt.readValue());
       } catch (err) { w.batt = null; }
 
-      /* Identity, if the firmware has it. The hand came from the name before this
-         link existed, which is what made the connection automatic; this is the
-         part the name has no room for. Absent on anything older than v2.3. */
+      /* Identity, straight from the wrap, and the only authority on which hand it
+         is: the letter in a name is a convention, and the name is a label somebody
+         can type. Absent on anything older than v2.3. */
       w.ident = null;
       try {
         const dv = await (await svc.getCharacteristic(BLE.IDENT)).readValue();
@@ -4099,6 +4204,28 @@
           };
         }
       } catch (err) { w.ident = null; }
+
+      /* Written down against the device id, so from the next session on the hand
+         is known before anything is connected and the pair comes up by itself.
+         And acted on now: a wrap connected to the hand that happened to be free,
+         which is what happens the first time this browser meets one, is moved to
+         the hand it says it is on. Without this a renamed wrap would sit wherever
+         it landed and mislabel every punch of the session. */
+      if (w.ident && w.ident.hand) {
+        const claimed = w.ident.hand;
+        rememberHand(device, claimed);
+        if (claimed !== side && !WRAPS[claimed].device) {
+          WRAPS[claimed] = w;
+          WRAPS[side] = {};
+          wrapUI(side, '', 'Not connected');
+          side = claimed;
+        } else if (claimed !== side) {
+          connectNote('That wrap says it is the ' + claimed + ' one, and the '
+            + claimed + ' hand already has a wrap connected. It is running as the '
+            + side + ' hand for now. If the pair is the wrong way round, disconnect '
+            + 'both and connect them again.');
+        }
+      }
 
       wrapUI(side, 'live', rich ? 'Connected' : 'Connected, older firmware');
       connectNote(rich

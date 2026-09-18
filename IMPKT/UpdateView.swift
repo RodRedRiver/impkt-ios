@@ -25,6 +25,10 @@ final class Updater: NSObject, ObservableObject {
     @Published var target: FoundWrap?
 
     private var controller: DFUServiceController?
+    /// Kept so the failed state can offer another go at the same wrap without
+    /// making somebody find it in the list again, which on a wrap that is now
+    /// sitting in its bootloader is not possible by shaking it.
+    private(set) var lastTarget: FoundWrap?
 
     static var bundledZip: URL? {
         Bundle.main.url(forResource: "firmware", withExtension: "zip")
@@ -55,29 +59,54 @@ final class Updater: NSObject, ObservableObject {
         }
 
         target = wrap
+        lastTarget = wrap
         phase = .connecting
         progress = 0
-        detail = "Waking the wrap's bootloader"
-
-        // Our own connection has to go first. The DFU library opens its own, and
-        // two links to one peripheral do not fail cleanly: the update simply
-        // stalls part way with nothing said, which on a bench looks like a bad
-        // board.
-        WrapCentral.shared.release(wrap.id)
-        WrapCentral.shared.stopScan()
+        detail = wrap.inBootloader ? "Picking the update back up" : "Waking the wrap's bootloader"
 
         let initiator = DFUServiceInitiator().with(firmware: firmware)
         initiator.delegate = self
         initiator.progressDelegate = self
         initiator.logger = self
-        // The firmware announces the jump to its bootloader and reconnects under a
-        // different address. Letting the library handle that is the entire reason
-        // for using it rather than writing the protocol here.
-        initiator.alternativeAdvertisingNameEnabled = true
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            self.controller = initiator.start(target: peripheral)
+        // The handoff, which is the part that was failing.
+        //
+        // The wrap leaves the conversation as itself and comes back as its
+        // bootloader: a different name (AdaDFU), a different set of services, and
+        // possibly a different Bluetooth address. Whether the address changes
+        // depends on whether the firmware managed to hand its own address over
+        // before jumping, so the library must not be told to expect one case or
+        // the other. Scanning covers both, because the bootloader advertises
+        // openly and says who it is.
+        //
+        // alternativeAdvertisingNameEnabled used to be set here instead. It is
+        // ignored in Legacy DFU, which is what these wraps speak, so it did
+        // nothing at all and the library sat waiting for a peripheral that had
+        // already come back under another identity.
+        initiator.forceScanningForNewAddressInLegacyDfu = true
+        initiator.peripheralSelector = BootloaderSelector()
+        // Ten seconds is the library's default and it is not enough here: a wrap
+        // that has dropped a power tier advertises every 2.5 s, and the bootloader
+        // takes a moment to come up after the jump.
+        initiator.connectionTimeout = 25
+
+        // Our own connection has to be gone first, and gone means the disconnect
+        // has actually landed rather than been asked for. The DFU library opens
+        // its own link, and two links to one peripheral do not fail cleanly: the
+        // update stalls part way with nothing said, which on a bench looks like a
+        // bad board.
+        WrapCentral.shared.stopScan()
+        WrapCentral.shared.release(wrap.id) { [weak self] in
+            self?.controller = initiator.start(target: peripheral)
         }
+    }
+
+    /// Retries the last attempt. Same wrap, current peripheral, because a wrap in
+    /// bootloader mode may be advertising under a new address by now.
+    func retry() {
+        guard let wrap = lastTarget else { return }
+        let fresh = WrapCentral.shared.found.first { $0.id == wrap.id } ?? wrap
+        start(fresh)
     }
 
     func cancel() {
@@ -86,6 +115,26 @@ final class Updater: NSObject, ObservableObject {
         phase = .idle
         detail = ""
         progress = 0
+    }
+}
+
+/// Which peripheral the library may treat as "that wrap, in bootloader mode"
+/// while it is scanning for the far side of the handoff.
+///
+/// The default selector takes the first thing advertising the DFU service UUID,
+/// which is wrong in a room with two wraps in it: the running firmware mentions
+/// the DFU service in its scan response as well, so the library could pick up the
+/// pilot's other wrap and push a bootloader onto a board nobody chose. The
+/// bootloader calls itself AdaDFU and the firmware never does, so the name is the
+/// honest test, and it is read from the advertisement rather than from
+/// peripheral.name, which iOS caches and will still be reporting the old one.
+final class BootloaderSelector: DFUPeripheralSelector {
+    override func select(_ peripheral: CBPeripheral,
+                         advertisementData: [String: AnyObject],
+                         RSSI: NSNumber,
+                         hint name: String?) -> Bool {
+        let advertised = (advertisementData[CBAdvertisementDataLocalNameKey] as? String) ?? ""
+        return advertised.lowercased().hasPrefix("adadfu")
     }
 }
 
@@ -103,10 +152,15 @@ extension Updater: DFUServiceDelegate {
             detail = "Updated. The wrap has restarted on the new firmware."
             progress = 1
             controller = nil
+            // Scanning was stopped for the duration so the two scans did not
+            // fight. Putting it back is what makes the wrap reappear in the list
+            // on its new firmware, which is also the proof that it came back.
+            WrapCentral.shared.startScan()
         case .aborted:
             phase = .idle
             detail = "Stopped. The wrap kept the firmware it had."
             controller = nil
+            WrapCentral.shared.startScan()
         // The library adds states between releases, and a new one is not a
         // failure: the update is still running, so the screen says so rather
         // than showing stale text or claiming to be finished.
@@ -118,10 +172,15 @@ extension Updater: DFUServiceDelegate {
     func dfuError(_ error: DFUError, didOccurWithMessage message: String) {
         // Said in full, including the library's own message. An update that fails
         // silently leaves somebody in another country holding a board they think
-        // is broken, and the recovery is nearly always "charge it and press again".
+        // is broken.
         phase = .failed(message)
         detail = ""
         controller = nil
+        // Back to scanning straight away, and this is not housekeeping: if the
+        // jump succeeded and only the upload failed, the wrap is sitting in its
+        // bootloader right now and the scan is the only thing that can find it.
+        // It shows up as AdaDFU, with Finish update next to it.
+        WrapCentral.shared.startScan()
     }
 }
 
@@ -152,7 +211,9 @@ struct UpdateView: View {
                     switch updater.phase {
                     case .idle:
                         Text("Wake a wrap by shaking it, pick it below, and it will be "
-                             + "updated over Bluetooth. Keep the phone next to it.")
+                             + "updated over Bluetooth. Keep the phone next to it. A wrap "
+                             + "leaves the list when it goes back to sleep, so if it is not "
+                             + "there, shake it again.")
                             .font(.footnote).foregroundColor(.secondary)
                     case .connecting, .sending:
                         VStack(alignment: .leading, spacing: 8) {
@@ -167,13 +228,30 @@ struct UpdateView: View {
                         Label(updater.detail, systemImage: "checkmark.circle.fill")
                             .foregroundColor(.green).font(.footnote)
                     case .failed(let why):
+                        // Two failures that look identical and need opposite
+                        // advice. If the jump never happened the wrap is fine and
+                        // wants shaking; if the jump happened and the upload did
+                        // not, the wrap is sitting in its bootloader where shaking
+                        // it does nothing at all, because the firmware that would
+                        // feel the shake is not the thing that is running.
+                        let stranded = central.found.contains { $0.inBootloader }
                         VStack(alignment: .leading, spacing: 6) {
-                            Label("The update did not finish", systemImage: "exclamationmark.triangle.fill")
+                            Label(stranded ? "That wrap is waiting in update mode"
+                                           : "The update did not finish",
+                                  systemImage: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange).font(.footnote)
                             Text(why).font(.caption).foregroundColor(.secondary)
-                            Text("Charge the wrap, shake it awake and try once more. The wrap "
-                                 + "keeps working on its old firmware until an update finishes.")
+                            Text(stranded
+                                 ? "It is listed below. Until an update finishes it cannot "
+                                   + "punch, and shaking it will not wake it, so press Finish "
+                                   + "update with the phone next to it."
+                                 : "The wrap kept the firmware it had and still works. Shake it "
+                                   + "awake, wait for it to appear below, and press Update again.")
                                 .font(.caption).foregroundColor(.secondary)
+                            if updater.lastTarget != nil {
+                                Button(stranded ? "Finish update" : "Try again") { updater.retry() }
+                                    .font(.footnote)
+                            }
                         }
                     }
                 } header: {
@@ -193,8 +271,10 @@ struct UpdateView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(wrap.name)
-                                    Text("signal \(wrap.rssi) dBm")
+                                    Text(wrap.inBootloader ? "A wrap in update mode" : wrap.name)
+                                    Text(wrap.inBootloader
+                                         ? "Its last update stopped part way, signal \(wrap.rssi) dBm"
+                                         : "signal \(wrap.rssi) dBm")
                                         .font(.caption).foregroundColor(.secondary)
                                 }
                                 Spacer()
@@ -202,7 +282,8 @@ struct UpdateView: View {
                                    updater.phase == .connecting || updater.phase == .sending {
                                     ProgressView()
                                 } else {
-                                    Text("Update").font(.footnote)
+                                    Text(wrap.inBootloader ? "Finish update" : "Update")
+                                        .font(.footnote)
                                 }
                             }
                         }

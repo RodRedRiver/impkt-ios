@@ -39,14 +39,38 @@
   var devices = {};          // deviceId -> BluetoothDevice
   var scanTargets = [];      // things listening for advertisementreceived
 
+  /* How long the page waits for the app to answer, per operation.
+     The app answers every message it can, its own failures included, so these
+     deadlines are for the case where it cannot: a message that never arrives, or a
+     native call that returns neither way. Without one the promise never settles,
+     and a promise that never settles leaves the page reading "Connecting" with no
+     error and no button, which looks exactly like a broken wrap. Connect is the
+     long one because the app gives the wrap 12 seconds of its own first, and the
+     app's reason for failing is more use than this one.
+     `pick` is deliberately absent: it puts a chooser in front of a person, and a
+     person may take as long as they like. */
+  var DEADLINE_MS = {
+    connect: 20000, disconnect: 5000, read: 10000, write: 10000, notify: 10000,
+    scan: 8000, scanStop: 5000, known: 5000, forget: 5000
+  };
+
   function send(op, args) {
     return new Promise(function (resolve, reject) {
       var id = seq++;
-      pending[id] = { resolve: resolve, reject: reject };
+      var ms = DEADLINE_MS[op] || 0;
+      var timer = ms ? setTimeout(function () {
+        if (!pending[id]) return;
+        delete pending[id];
+        var e = new Error('the app did not answer that ' + op + ' in time');
+        e.name = 'NetworkError';
+        reject(e);
+      }, ms) : null;
+      pending[id] = { resolve: resolve, reject: reject, timer: timer };
       try {
         window.webkit.messageHandlers.impkt.postMessage({ id: id, op: op, args: args || {} });
       } catch (e) {
         delete pending[id];
+        if (timer) clearTimeout(timer);
         reject(new Error('the app bridge is not there: ' + e));
       }
     });
@@ -300,8 +324,11 @@
   window.__impkt = {
     reply: function (id, ok, payload) {
       var p = pending[id];
+      /* Nothing to do for an id that is not waiting any more, which is the normal
+         way a reply that beat its own deadline by a moment arrives. */
       if (!p) return;
       delete pending[id];
+      if (p.timer) clearTimeout(p.timer);
       if (ok) p.resolve(payload || {});
       else {
         var e = new Error((payload && payload.message) || 'the app refused that');

@@ -8,6 +8,10 @@ struct FoundWrap: Identifiable, Equatable {
     var rssi: Int
     var seen: Date
     var connected: Bool = false
+    /// True when this is not the wrap's firmware answering but its bootloader: an
+    /// update was started and did not finish. It still speaks DFU, so it is still
+    /// recoverable, but nothing else about it works and shaking it does nothing.
+    var inBootloader: Bool = false
 }
 
 /// Every Bluetooth conversation in the app goes through here: the pilot page's
@@ -29,6 +33,20 @@ final class WrapCentral: NSObject, ObservableObject {
     /// that an over-the-air update will be accepted.
     static let dfuService    = CBUUID(string: "00001530-1212-efde-1523-785feabcd123")
 
+    /// iOS has no connect timeout. `connect` is a standing request: if the wrap
+    /// went to sleep between advertising and being tapped, CoreBluetooth waits
+    /// for it to come back, for ever, saying nothing. That is the whole of "it
+    /// says failed to connect" on one side and "it just sits on Connecting" on
+    /// the other, so every connect this app makes gets a deadline of its own.
+    static let connectTimeout: TimeInterval = 12
+    /// How long a wrap stays in the nearby list after its last advertisement.
+    /// The slowest thing the firmware does is a 5 s advertisement in its deepest
+    /// idle tier, so this is that twice over plus a margin: long enough that a
+    /// couple of missed packets do not make a row flicker, short enough that a
+    /// wrap which has actually gone is gone from the screen. A row that outlives
+    /// the wrap it names is a row that can only fail when pressed.
+    static let staleAfter: TimeInterval = 15
+
     @Published private(set) var poweredOn = false
     @Published private(set) var found: [FoundWrap] = []
     @Published private(set) var scanning = false
@@ -43,6 +61,9 @@ final class WrapCentral: NSObject, ObservableObject {
     private typealias Reply = (Bool, [String: Any]) -> Void
 
     private var connectWaiters: [UUID: Reply] = [:]
+    private var connectTimers:  [UUID: DispatchWorkItem] = [:]
+    private var releaseWaiters: [UUID: [() -> Void]] = [:]
+    private var pruneTimer: Timer?
     private var servicesLeft:   [UUID: Int] = [:]
     private var readWaiters:  [String: Reply] = [:]
     private var writeWaiters: [String: Reply] = [:]
@@ -63,16 +84,40 @@ final class WrapCentral: NSObject, ObservableObject {
 
     func startScan() {
         whenReady {
+            // Both services, because a wrap whose update was interrupted is
+            // sitting in its bootloader advertising the DFU service and nothing
+            // else. Scanning only for the punch service is why such a wrap
+            // vanishes from the app entirely: the one screen that could rescue it
+            // could not see it, and no amount of shaking brings it back because
+            // the firmware that would feel the shake is not running.
             self.manager.scanForPeripherals(
-                withServices: [WrapCentral.punchService],
+                withServices: [WrapCentral.punchService, WrapCentral.dfuService],
                 options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
             self.scanning = true
+            self.startPruning()
         }
     }
 
     func stopScan() {
         if manager.state == .poweredOn { manager.stopScan() }
         scanning = false
+        pruneTimer?.invalidate()
+        pruneTimer = nil
+    }
+
+    /// Rows go away when the wrap they describe stops speaking. Without this the
+    /// list is a history of everything the phone has ever heard, and the update
+    /// screen offers wraps that went to sleep ten minutes ago: pressing one can
+    /// only fail, and it fails slowly, which reads as a broken board.
+    private func startPruning() {
+        guard pruneTimer == nil else { return }
+        pruneTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            let now = Date()
+            self.found.removeAll {
+                !$0.connected && now.timeIntervalSince($0.seen) > WrapCentral.staleAfter
+            }
+        }
     }
 
     func peripheral(_ id: UUID) -> CBPeripheral? {
@@ -85,9 +130,25 @@ final class WrapCentral: NSObject, ObservableObject {
     /// Disconnect before handing a wrap to the DFU library, which connects to it
     /// itself. Two connections to one peripheral is not an error on iOS, it is
     /// worse: it works, and then the update stalls halfway with no reason given.
-    func release(_ id: UUID) {
-        guard let p = peripherals[id], p.state != .disconnected else { return }
+    /// `then` runs when the link is actually down, not when the cancel was asked
+    /// for. The difference matters to the updater: it used to wait a fixed 0.6 s
+    /// and hope, and on a busy link the disconnect lands later than that, so the
+    /// DFU library opened its connection while ours was still closing.
+    func release(_ id: UUID, then done: (() -> Void)? = nil) {
+        guard let p = peripherals[id], p.state != .disconnected else { done?(); return }
+        if let done = done {
+            releaseWaiters[id, default: []].append(done)
+            // A disconnect that never arrives must not strand the caller either.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.settleRelease(id)
+            }
+        }
         manager.cancelPeripheralConnection(p)
+    }
+
+    private func settleRelease(_ id: UUID) {
+        guard let waiters = releaseWaiters.removeValue(forKey: id) else { return }
+        waiters.forEach { $0() }
     }
 
     private func whenReady(_ work: @escaping () -> Void) {
@@ -108,12 +169,20 @@ final class WrapCentral: NSObject, ObservableObject {
         UserDefaults.standard.set(all, forKey: knownKey)
     }
 
-    private func note(_ p: CBPeripheral, rssi: Int?, name: String?) {
+    private func note(_ p: CBPeripheral, rssi: Int?, name: String?, uuids: [CBUUID] = []) {
         if let n = name, !n.isEmpty { advNames[p.identifier] = n }
         let display = advNames[p.identifier] ?? p.name ?? "A wrap"
+        // The running firmware advertises the punch service and mentions DFU in
+        // its scan response, so DFU alone is not the test: the bootloader is the
+        // one that offers DFU and no punch service. Its name settles it either
+        // way, because the Adafruit bootloader calls itself AdaDFU and the
+        // firmware never does.
+        let boot = (uuids.contains(WrapCentral.dfuService) && !uuids.contains(WrapCentral.punchService))
+            || display.lowercased().hasPrefix("adadfu")
         let row = FoundWrap(id: p.identifier, name: display,
                             rssi: rssi ?? found.first(where: { $0.id == p.identifier })?.rssi ?? -127,
-                            seen: Date(), connected: p.state == .connected)
+                            seen: Date(), connected: p.state == .connected,
+                            inBootloader: boot)
         if let i = found.firstIndex(where: { $0.id == p.identifier }) { found[i] = row }
         else { found.append(row) }
     }
@@ -184,9 +253,8 @@ final class WrapCentral: NSObject, ObservableObject {
                     return
                 }
                 p.delegate = self
-                self.connectWaiters[id] = reply
                 self.remember(id)
-                self.manager.connect(p, options: nil)
+                self.beginConnect(p, reply: reply)
             }
 
         case "disconnect":
@@ -226,6 +294,46 @@ final class WrapCentral: NSObject, ObservableObject {
             reply(false, ["name": "NotSupportedError",
                           "message": "the app bridge has no \(op)"])
         }
+    }
+
+    /// Every connect goes through here, so there is one place that owns the
+    /// deadline and one place that owns the promise.
+    private func beginConnect(_ p: CBPeripheral, reply: @escaping Reply) {
+        let id = p.identifier
+        // A second connect for the same wrap used to overwrite the first one's
+        // reply, leaving a caller waiting on an answer that could never arrive.
+        // Told no, out loud, instead.
+        if let older = connectWaiters.removeValue(forKey: id) {
+            older(false, ["name": "NetworkError",
+                          "message": "that connect was replaced by a newer one"])
+        }
+        connectTimers.removeValue(forKey: id)?.cancel()
+        connectWaiters[id] = reply
+
+        let job = DispatchWorkItem { [weak self] in self?.connectTimedOut(p) }
+        connectTimers[id] = job
+        DispatchQueue.main.asyncAfter(deadline: .now() + WrapCentral.connectTimeout, execute: job)
+        manager.connect(p, options: nil)
+    }
+
+    private func connectTimedOut(_ p: CBPeripheral) {
+        connectTimers[p.identifier] = nil
+        guard let reply = connectWaiters.removeValue(forKey: p.identifier) else { return }
+        // The pending request has to be withdrawn as well as answered. Left
+        // standing, it completes minutes later when the wrap next wakes, and the
+        // app connects to a wrap nobody asked for any more.
+        manager.cancelPeripheralConnection(p)
+        reply(false, ["name": "NetworkError",
+                      "message": "the wrap did not answer within "
+                               + "\(Int(WrapCentral.connectTimeout)) seconds, which usually "
+                               + "means it went back to sleep. Shake it and try again."])
+    }
+
+    /// Hands back the reply for a connect that has reached its end, whichever end
+    /// that was, and cancels its deadline on the way out.
+    private func settleConnect(_ id: UUID) -> Reply? {
+        connectTimers.removeValue(forKey: id)?.cancel()
+        return connectWaiters.removeValue(forKey: id)
     }
 
     private let notThere: [String: Any] = [
@@ -289,13 +397,13 @@ extension WrapCentral: CBCentralManagerDelegate {
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         peripherals[p.identifier] = p
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        note(p, rssi: RSSI.intValue, name: name)
+        let uuids = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []
+        note(p, rssi: RSSI.intValue, name: name, uuids: uuids)
         emit?("advertisement", [
             "id": p.identifier.uuidString,
             "name": advNames[p.identifier] ?? p.name ?? "",
             "rssi": RSSI.intValue,
-            "uuids": (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
-                .map { $0.uuidString.lowercased() }
+            "uuids": uuids.map { $0.uuidString.lowercased() }
         ])
         if pickWaiter != nil { settlePick() }
     }
@@ -310,7 +418,7 @@ extension WrapCentral: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral,
                         error: Error?) {
-        if let reply = connectWaiters.removeValue(forKey: p.identifier) {
+        if let reply = settleConnect(p.identifier) {
             reply(false, ["name": "NetworkError",
                           "message": error?.localizedDescription ?? "the wrap would not connect"])
         }
@@ -318,13 +426,14 @@ extension WrapCentral: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral,
                         error: Error?) {
-        if let reply = connectWaiters.removeValue(forKey: p.identifier) {
+        if let reply = settleConnect(p.identifier) {
             reply(false, ["name": "NetworkError",
                           "message": error?.localizedDescription ?? "the wrap dropped the link"])
         }
         if let i = found.firstIndex(where: { $0.id == p.identifier }) {
             found[i].connected = false
         }
+        settleRelease(p.identifier)
         emit?("disconnected", ["device": p.identifier.uuidString])
     }
 }
@@ -332,9 +441,22 @@ extension WrapCentral: CBCentralManagerDelegate {
 extension WrapCentral: CBPeripheralDelegate {
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
+        // A link whose GATT table cannot be read is not a usable connection, and
+        // answering the page with an empty service list turns one honest failure
+        // into a handful of baffling ones: every getPrimaryService afterwards
+        // fails with NotFoundError, which reads as the wrong firmware rather than
+        // as a discovery that never happened.
+        if let e = error {
+            failConnect(p, "the wrap connected but would not say what it offers: "
+                         + e.localizedDescription)
+            return
+        }
         let services = p.services ?? []
+        if services.isEmpty {
+            failConnect(p, "the wrap connected but offered no services at all")
+            return
+        }
         servicesLeft[p.identifier] = services.count
-        if services.isEmpty { finishConnect(p) ; return }
         for s in services { p.discoverCharacteristics(nil, for: s) }
     }
 
@@ -345,9 +467,30 @@ extension WrapCentral: CBPeripheralDelegate {
         if left <= 0 { finishConnect(p) }
     }
 
+    /// Ends a connect badly, and puts the link down on the way out. A half-open
+    /// link the page has been told nothing about is a link nothing will ever
+    /// close, and the next connect to that wrap then fails for a second reason.
+    private func failConnect(_ p: CBPeripheral, _ why: String) {
+        servicesLeft[p.identifier] = nil
+        guard let reply = settleConnect(p.identifier) else { return }
+        manager.cancelPeripheralConnection(p)
+        reply(false, ["name": "NetworkError", "message": why])
+    }
+
     private func finishConnect(_ p: CBPeripheral) {
         servicesLeft[p.identifier] = nil
-        guard let reply = connectWaiters.removeValue(forKey: p.identifier) else { return }
+        guard let reply = settleConnect(p.identifier) else { return }
+        // Characteristics are the whole point of the connection. A wrap that
+        // listed services and then no characteristics under any of them is the
+        // same failure as one that listed no services, and is worth saying once
+        // rather than five times over as the page looks each one up.
+        if (p.services ?? []).allSatisfy({ ($0.characteristics ?? []).isEmpty }) {
+            manager.cancelPeripheralConnection(p)
+            reply(false, ["name": "NetworkError",
+                          "message": "the wrap connected but none of its services "
+                                   + "would list what they can do"])
+            return
+        }
         var services: [[String: Any]] = []
         for s in p.services ?? [] {
             let chars: [[String: Any]] = (s.characteristics ?? []).map { c in
