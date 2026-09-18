@@ -610,7 +610,24 @@ extension WrapCentral: CBPeripheralDelegate {
             }
             services.append(["uuid": s.uuid.uuidString.lowercased(), "characteristics": chars])
         }
-        if let i = found.firstIndex(where: { $0.id == p.identifier }) { found[i].connected = true }
+        // A wrap this app is connected to has to BE in the list, not merely get
+        // flagged if a row for it happens to exist already. It usually does not: on
+        // a fresh launch the pilot page connects straight to a remembered wrap
+        // through retrievePeripherals, so there is no advertisement and no row, and
+        // a connected wrap stops advertising altogether. The update screen was
+        // therefore empty, and no amount of shaking could change it, because the
+        // one wrap in the room was invisible exactly BECAUSE the app was talking
+        // to it. Pressing Update on this row works: it drops every link first.
+        if let i = found.firstIndex(where: { $0.id == p.identifier }) {
+            found[i].connected = true
+            found[i].seen = Date()
+        } else {
+            found.append(FoundWrap(id: p.identifier,
+                                   name: advNames[p.identifier] ?? p.name ?? "This wrap",
+                                   rssi: 0,
+                                   seen: Date(),
+                                   connected: true))
+        }
         var payload: [String: Any] = ["services": services]
         if let n = advNames[p.identifier] ?? p.name { payload["name"] = n }
         reply(true, payload)

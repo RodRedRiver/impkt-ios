@@ -374,9 +374,16 @@ struct UpdateView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(wrap.inBootloader ? "A wrap in update mode" : wrap.name)
+                                    // A connected wrap has no signal reading to
+                                    // show: RSSI comes from advertisements and a
+                                    // connected wrap has stopped sending them.
+                                    // Printing "signal 0 dBm" would read as a
+                                    // measurement, and a suspiciously good one.
                                     Text(wrap.inBootloader
                                          ? "Its last update stopped part way, signal \(wrap.rssi) dBm"
-                                         : "signal \(wrap.rssi) dBm")
+                                         : wrap.connected
+                                           ? "Connected to this phone"
+                                           : "signal \(wrap.rssi) dBm")
                                         .font(.caption).foregroundColor(.secondary)
                                 }
                                 Spacer()
