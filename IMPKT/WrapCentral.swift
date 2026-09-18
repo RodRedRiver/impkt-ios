@@ -57,6 +57,10 @@ final class WrapCentral: NSObject, ObservableObject {
     private var manager: CBCentralManager!
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var advNames: [UUID: String] = [:]
+    /// Peripherals that have advertised the punch service at least once, so a later
+    /// advertisement carrying only the scan response cannot be misread as a
+    /// bootloader. See `note` for why that happens and what it broke.
+    private var punchSeen: Set<UUID> = []
 
     private typealias Reply = (Bool, [String: Any]) -> Void
 
@@ -241,8 +245,27 @@ final class WrapCentral: NSObject, ObservableObject {
         // one that offers DFU and no punch service. Its name settles it either
         // way, because the Adafruit bootloader calls itself AdaDFU and the
         // firmware never does.
-        let boot = (uuids.contains(WrapCentral.dfuService) && !uuids.contains(WrapCentral.punchService))
-            || display.lowercased().hasPrefix("adadfu")
+        //
+        // The absence of the punch service is only trustworthy ONCE, though, and
+        // this row gets rewritten on every advertisement. The firmware splits its
+        // identity across two packets because it has to: the punch UUID is 18 of a
+        // 31 byte budget, so the name and the DFU UUID live in the scan response.
+        // iOS usually merges the two before handing them over and is not obliged
+        // to, and a callback carrying the scan response alone looks exactly like a
+        // bootloader: DFU present, punch absent. One such callback used to flip a
+        // healthy wrap to "in update mode" for good, and from there it was refused
+        // a place in the pilot's list, never remembered, and offered to the
+        // updater as a board needing rescue.
+        //
+        // So the punch service is remembered per peripheral. A wrap that has ever
+        // shown it is not a bootloader unless it says so by name. That cannot mask
+        // a genuine bootloader, because the bootloader advertises on the board's
+        // address plus one and so arrives as a different identifier entirely.
+        if uuids.contains(WrapCentral.punchService) { punchSeen.insert(p.identifier) }
+        let looksLikeDfuOnly = uuids.contains(WrapCentral.dfuService)
+            && !uuids.contains(WrapCentral.punchService)
+            && !punchSeen.contains(p.identifier)
+        let boot = looksLikeDfuOnly || display.lowercased().hasPrefix("adadfu")
         let row = FoundWrap(id: p.identifier, name: display,
                             rssi: rssi ?? found.first(where: { $0.id == p.identifier })?.rssi ?? -127,
                             seen: Date(), connected: p.state == .connected,

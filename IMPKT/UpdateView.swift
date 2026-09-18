@@ -146,13 +146,27 @@ final class Updater: NSObject, ObservableObject {
     static let bootloaderGrace: TimeInterval = 6
 
     func retry() {
-        let boot = WrapCentral.shared.found.first {
+        let live = WrapCentral.shared.found
+        let boot = live.first {
             $0.inBootloader
                 && Date().timeIntervalSince($0.seen) < Updater.bootloaderGrace
         }
-        guard let wrap = boot ?? lastTarget else { return }
-        let fresh = WrapCentral.shared.found.first { $0.id == wrap.id } ?? wrap
-        start(fresh)
+        // The target must be a row in the LIVE list. It used to fall back to
+        // `lastTarget` unconditionally, which is a value held in memory rather than
+        // a thing on the air, so once the wrap it named had gone this spent twenty
+        // five seconds connecting to nothing and reported a wrap that would not
+        // connect. Pressing the button again did the same thing again. Nothing to
+        // aim at is worth saying out loud in one second instead.
+        guard let wrap = boot ?? live.first(where: { $0.id == lastTarget?.id }) else {
+            phase = .failed("nothing is answering right now, so there is nothing to "
+                          + "send this to. Shake the wrap, wait for it to appear "
+                          + "below, and press Update on it.")
+            detail = ""
+            neverConnected = true
+            WrapCentral.shared.startScan()
+            return
+        }
+        start(wrap)
     }
 
     func cancel() {
@@ -344,7 +358,14 @@ struct UpdateView: View {
                             // thing in the room when this fails and the step it died
                             // on is the whole diagnosis.
                             if !updater.log.isEmpty {
-                                Text(updater.log.suffix(6).joined(separator: "\n"))
+                                // Sixteen rather than six. Six lines is exactly the
+                                // tail that every one of these failures shares, so
+                                // every screenshot looked identical and none of them
+                                // said which step it died on: whether the wrap was
+                                // ever connected, whether it was told to jump, and
+                                // whether a bootloader was found by scanning are all
+                                // further up, and they are the whole diagnosis.
+                                Text(updater.log.suffix(16).joined(separator: "\n"))
                                     .font(.system(.caption2, design: .monospaced))
                                     .foregroundColor(.secondary)
                                     .textSelection(.enabled)
