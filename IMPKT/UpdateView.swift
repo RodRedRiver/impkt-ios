@@ -277,6 +277,16 @@ struct UpdateView: View {
 
     @ObservedObject private var central = WrapCentral.shared
     @StateObject private var updater = Updater()
+    /// Set by tapping a wrap, cleared by answering the confirmation.
+    ///
+    /// An update is not a safe thing to start by accident on these wraps. The
+    /// bootloader erases the application before a byte of the new image arrives,
+    /// so an update that does not finish leaves a wrap that cannot punch, cannot
+    /// be woken by shaking, and needs a computer and a cable to come back. It also
+    /// loses the wrap's stored identity, which is a new random unit id and the hand
+    /// assignment gone. Over the air is not reliable on these boards yet, so this
+    /// tap says what it costs before it does it.
+    @State private var confirming: FoundWrap?
 
     var body: some View {
         NavigationView {
@@ -284,11 +294,18 @@ struct UpdateView: View {
                 Section {
                     switch updater.phase {
                     case .idle:
-                        Text("Wake a wrap by shaking it, pick it below, and it will be "
-                             + "updated over Bluetooth. Keep the phone next to it. A wrap "
-                             + "leaves the list when it goes back to sleep, so if it is not "
-                             + "there, shake it again.")
-                            .font(.footnote).foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Updating over Bluetooth is not reliable on these wraps "
+                                 + "yet. It can leave a wrap that needs a computer and a "
+                                 + "cable to come back, and it loses the wrap's hand "
+                                 + "setting. Use a cable if you have one.")
+                                .font(.footnote).foregroundColor(.orange)
+                            Text("Wake a wrap by shaking it, pick it below, and it will be "
+                                 + "updated over Bluetooth. Keep the phone next to it. A wrap "
+                                 + "leaves the list when it goes back to sleep, so if it is not "
+                                 + "there, shake it again.")
+                                .font(.footnote).foregroundColor(.secondary)
+                        }
                     case .connecting, .sending:
                         VStack(alignment: .leading, spacing: 8) {
                             ProgressView(value: updater.progress)
@@ -390,7 +407,7 @@ struct UpdateView: View {
                     }
                     ForEach(central.found.sorted { $0.rssi > $1.rssi }) { wrap in
                         Button {
-                            updater.start(wrap)
+                            confirming = wrap
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -434,6 +451,25 @@ struct UpdateView: View {
                 if updater.phase != .sending && updater.phase != .connecting {
                     central.stopScan()
                 }
+            }
+            .alert("Update this wrap over Bluetooth?",
+                   isPresented: Binding(get: { confirming != nil },
+                                        set: { if !$0 { confirming = nil } }),
+                   presenting: confirming) { wrap in
+                Button("Update anyway", role: .destructive) {
+                    let target = wrap
+                    confirming = nil
+                    updater.start(target)
+                }
+                Button("Cancel", role: .cancel) { confirming = nil }
+            } message: { _ in
+                Text("The wrap's firmware is erased before any of the new firmware "
+                   + "arrives, so an update that does not finish leaves a wrap that "
+                   + "cannot punch and cannot be woken by shaking. Getting it back "
+                   + "needs a computer and a cable. It also loses the wrap's hand "
+                   + "setting and its unit id.\n\n"
+                   + "Updates over Bluetooth are not reliable on these wraps yet. If "
+                   + "you have a cable, use that instead.")
             }
         }
     }
