@@ -32,6 +32,14 @@ final class Updater: NSObject, ObservableObject {
     /// only question that matters is which step it died on. Without the log,
     /// "the update did not finish" is the whole of what anybody can report.
     @Published private(set) var log: [String] = []
+    /// True once the library has told the wrap to jump into its bootloader. From
+    /// that moment the wrap may be stranded, whether or not the phone can currently
+    /// see it, and "it kept the firmware it had and still works" would be a lie.
+    @Published private(set) var jumped = false
+    /// True when the attempt never got a link at all. That one is either a wrap
+    /// that went back to sleep or a wrap already sitting in its bootloader from an
+    /// earlier attempt, and the advice for the two is different.
+    @Published private(set) var neverConnected = false
 
     private var controller: DFUServiceController?
     /// Kept so the failed state can offer another go at the same wrap without
@@ -72,6 +80,8 @@ final class Updater: NSObject, ObservableObject {
         phase = .connecting
         progress = 0
         log.removeAll()
+        jumped = false
+        neverConnected = true       // cleared by the first state past connecting
         detail = wrap.inBootloader ? "Picking the update back up" : "Waking the wrap's bootloader"
 
         let initiator = DFUServiceInitiator().with(firmware: firmware)
@@ -111,10 +121,20 @@ final class Updater: NSObject, ObservableObject {
         }
     }
 
-    /// Retries the last attempt. Same wrap, current peripheral, because a wrap in
-    /// bootloader mode may be advertising under a new address by now.
+    /// Picks the update back up. A wrap in bootloader mode is advertising on the
+    /// board's Bluetooth address PLUS ONE, so iOS files it as a different
+    /// peripheral, and the identifier this update started against stops answering
+    /// the moment the jump succeeds.
+    ///
+    /// So a visible bootloader wins over the wrap that was originally chosen. This
+    /// used to retry the original identifier, which after a successful jump and a
+    /// failed transfer can only ever time out: twenty five seconds of waiting on a
+    /// peripheral that no longer exists, reported as a wrap that will not connect,
+    /// with the real one advertising every 25 ms in the same room. Pressing the
+    /// button again did the same thing again.
     func retry() {
-        guard let wrap = lastTarget else { return }
+        let boot = WrapCentral.shared.found.first { $0.inBootloader }
+        guard let wrap = boot ?? lastTarget else { return }
         let fresh = WrapCentral.shared.found.first { $0.id == wrap.id } ?? wrap
         start(fresh)
     }
@@ -152,8 +172,13 @@ extension Updater: DFUServiceDelegate {
     func dfuStateDidChange(to state: DFUState) {
         switch state {
         case .connecting:      phase = .connecting; detail = "Connecting"
-        case .starting:        phase = .connecting; detail = "Starting the update"
-        case .enablingDfuMode: phase = .connecting; detail = "Rebooting into the bootloader"
+        case .starting:
+            phase = .connecting; detail = "Starting the update"
+            neverConnected = false
+        case .enablingDfuMode:
+            phase = .connecting; detail = "Rebooting into the bootloader"
+            neverConnected = false
+            jumped = true
         case .uploading:       phase = .sending;    detail = "Sending the firmware"
         case .validating:      phase = .sending;    detail = "The wrap is checking the image"
         case .disconnecting:   phase = .sending;    detail = "Finishing"
@@ -253,7 +278,13 @@ struct UpdateView: View {
                         // not, the wrap is sitting in its bootloader where shaking
                         // it does nothing at all, because the firmware that would
                         // feel the shake is not the thing that is running.
-                        let stranded = central.found.contains { $0.inBootloader }
+                        // `jumped` counts as stranded on its own. The phone cannot
+                        // always see the bootloader at the moment it looks, and a
+                        // wrap that was told to jump has already had its
+                        // application erased, so promising it "still works" on the
+                        // strength of an empty scan list is the one wrong answer.
+                        let stranded = updater.jumped
+                            || central.found.contains { $0.inBootloader }
                         VStack(alignment: .leading, spacing: 6) {
                             Label(stranded ? "That wrap is waiting in update mode"
                                            : "The update did not finish",
@@ -261,11 +292,17 @@ struct UpdateView: View {
                                 .foregroundColor(.orange).font(.footnote)
                             Text(why).font(.caption).foregroundColor(.secondary)
                             Text(stranded
-                                 ? "It is listed below. Until an update finishes it cannot "
-                                   + "punch, and shaking it will not wake it, so press Finish "
-                                   + "update with the phone next to it."
-                                 : "The wrap kept the firmware it had and still works. Shake it "
-                                   + "awake, wait for it to appear below, and press Update again.")
+                                 ? "Until an update finishes it cannot punch, and shaking it "
+                                   + "will not wake it. Press Finish update with the phone next "
+                                   + "to it. If that does not take, plug it into a computer and "
+                                   + "put the firmware back over the cable, which always works."
+                                 : updater.neverConnected
+                                   ? "The phone never got a link at all, so either the wrap went "
+                                     + "back to sleep, or it is already in update mode from an "
+                                     + "earlier try and is answering on a different address. "
+                                     + "Shake it and look for a wrap in update mode below."
+                                   : "The wrap kept the firmware it had and still works. Shake it "
+                                     + "awake, wait for it to appear below, and press Update again.")
                                 .font(.caption).foregroundColor(.secondary)
                             if stranded {
                                 Text("Leave it powered. If it loses power in this state it "
