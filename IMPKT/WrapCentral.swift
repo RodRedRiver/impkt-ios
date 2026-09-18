@@ -106,8 +106,16 @@ final class WrapCentral: NSObject, ObservableObject {
     func stopScan() {
         if manager.state == .poweredOn { manager.stopScan() }
         scanning = false
-        pruneTimer?.invalidate()
-        pruneTimer = nil
+        // Pruning deliberately keeps running. It used to stop here, which froze
+        // `found` as a snapshot of whatever happened to be on the air at the
+        // moment the scan stopped, and an update stops the scan as its first act.
+        // So a wrap that had once been seen in its bootloader stayed in the list
+        // for ever: the update screen kept announcing "that wrap is waiting in
+        // update mode" and telling somebody to leave a healthy board powered, and
+        // Finish update kept aiming at an identifier that had stopped existing the
+        // moment the wrap was repaired. Not scanning is a reason to trust the list
+        // LESS, not to preserve it, so the rows age out either way.
+        startPruning()
     }
 
     /// Rows go away when the wrap they describe stops speaking. Without this the
@@ -149,6 +157,38 @@ final class WrapCentral: NSObject, ObservableObject {
             }
         }
         manager.cancelPeripheralConnection(p)
+    }
+
+    /// Drops every link this app is holding, and waits for the disconnects to land.
+    ///
+    /// Not `release(id)`, and the difference is the whole of why updates timed out.
+    /// A wrap accepts exactly ONE connection and stops advertising while it has
+    /// one. An update targets the bootloader, which is a DIFFERENT peripheral
+    /// identifier from the running firmware, so releasing the target released
+    /// nothing at all: the pilot page's link to the application stayed up, the
+    /// wrap stayed silent and unconnectable, and the DFU library waited out its
+    /// twenty five seconds against a board sitting a foot away, healthy, and busy
+    /// talking to us the whole time. The bench tool said it plainly from the other
+    /// side of the cable: "advertising: off, a central is connected".
+    func releaseAll(then done: @escaping () -> Void) {
+        let live = peripherals.values.filter { $0.state != .disconnected }
+        guard !live.isEmpty else { done(); return }
+        var left = live.count
+        var fired = false
+        let finish = {
+            guard !fired else { return }
+            fired = true
+            done()
+        }
+        for p in live {
+            release(p.identifier) {
+                left -= 1
+                if left == 0 { finish() }
+            }
+        }
+        // release() backstops each peripheral at 3 s, but a link that never
+        // reports its disconnect must not hold an update up for ever.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { finish() }
     }
 
     private func settleRelease(_ id: UUID) {

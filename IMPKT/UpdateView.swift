@@ -110,13 +110,19 @@ final class Updater: NSObject, ObservableObject {
         // takes a moment to come up after the jump.
         initiator.connectionTimeout = 25
 
-        // Our own connection has to be gone first, and gone means the disconnect
-        // has actually landed rather than been asked for. The DFU library opens
-        // its own link, and two links to one peripheral do not fail cleanly: the
-        // update stalls part way with nothing said, which on a bench looks like a
-        // bad board.
+        // EVERY link this app holds has to be gone first, not just the link to the
+        // wrap being updated, and gone means the disconnect has landed rather than
+        // been asked for.
+        //
+        // This was `release(wrap.id)` and that is why updates timed out. A wrap
+        // accepts one connection and stops advertising while it has one. The
+        // bootloader is a different peripheral identifier from the running
+        // firmware, so on any update that targets the bootloader, releasing the
+        // target released nothing: the pilot page's link to the application stayed
+        // up, the wrap went quiet, and the DFU library spent twenty five seconds
+        // failing to find a board that was connected to us the entire time.
         WrapCentral.shared.stopScan()
-        WrapCentral.shared.release(wrap.id) { [weak self] in
+        WrapCentral.shared.releaseAll { [weak self] in
             self?.controller = initiator.start(target: peripheral)
         }
     }
@@ -132,8 +138,18 @@ final class Updater: NSObject, ObservableObject {
     /// peripheral that no longer exists, reported as a wrap that will not connect,
     /// with the real one advertising every 25 ms in the same room. Pressing the
     /// button again did the same thing again.
+    /// A bootloader only counts if it is on the air NOW. It advertises every 25 ms,
+    /// so one that has not been heard for six seconds is not there, and aiming at it
+    /// buys nothing but another timeout. The list used to be frozen the moment an
+    /// update began, so this kept picking a bootloader that had been gone for
+    /// minutes and reporting the healthy wrap next to it as stranded.
+    static let bootloaderGrace: TimeInterval = 6
+
     func retry() {
-        let boot = WrapCentral.shared.found.first { $0.inBootloader }
+        let boot = WrapCentral.shared.found.first {
+            $0.inBootloader
+                && Date().timeIntervalSince($0.seen) < Updater.bootloaderGrace
+        }
         guard let wrap = boot ?? lastTarget else { return }
         let fresh = WrapCentral.shared.found.first { $0.id == wrap.id } ?? wrap
         start(fresh)
@@ -283,8 +299,19 @@ struct UpdateView: View {
                         // wrap that was told to jump has already had its
                         // application erased, so promising it "still works" on the
                         // strength of an empty scan list is the one wrong answer.
+                        // The bootloader half of this has to be a LIVE reading. It
+                        // was any bootloader row at all, on a list that stopped
+                        // ageing out the moment an update began, so one interrupted
+                        // update in the past made this screen insist for ever that a
+                        // healthy wrap was waiting in update mode and had to be left
+                        // powered. The wrap was running its firmware, advertising,
+                        // and connected to this very app while the screen said it.
                         let stranded = updater.jumped
-                            || central.found.contains { $0.inBootloader }
+                            || central.found.contains {
+                                $0.inBootloader
+                                    && Date().timeIntervalSince($0.seen)
+                                        < Updater.bootloaderGrace
+                            }
                         VStack(alignment: .leading, spacing: 6) {
                             Label(stranded ? "That wrap is waiting in update mode"
                                            : "The update did not finish",
