@@ -295,8 +295,10 @@ struct UpdateView: View {
     /// so an update that does not finish leaves a wrap that cannot punch, cannot
     /// be woken by shaking, and needs a computer and a cable to come back. It also
     /// loses the wrap's stored identity, which is a new random unit id and the hand
-    /// assignment gone. Over the air is not reliable on these boards yet, so this
-    /// tap says what it costs before it does it.
+    /// assignment gone. None of that is a reason not to update over the air, which is
+    /// the only way a wrap in somebody's gym bag is ever going to be updated: it is a
+    /// reason for the tap to say what it costs, and for the phone to be asked to stay
+    /// put until it finishes.
     @State private var confirming: FoundWrap?
 
     var body: some View {
@@ -306,11 +308,6 @@ struct UpdateView: View {
                     switch updater.phase {
                     case .idle:
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Updating over Bluetooth is not reliable on these wraps "
-                                 + "yet. It can leave a wrap that needs a computer and a "
-                                 + "cable to come back, and it loses the wrap's hand "
-                                 + "setting. Use a cable if you have one.")
-                                .font(.footnote).foregroundColor(.orange)
                             Text("Wake a wrap by shaking it, pick it below, and it will be "
                                  + "updated over Bluetooth. Keep the phone next to it. A wrap "
                                  + "leaves the list when it goes back to sleep, so if it is not "
@@ -467,20 +464,18 @@ struct UpdateView: View {
                    isPresented: Binding(get: { confirming != nil },
                                         set: { if !$0 { confirming = nil } }),
                    presenting: confirming) { wrap in
-                Button("Update anyway", role: .destructive) {
+                Button("Update", role: .destructive) {
                     let target = wrap
                     confirming = nil
                     updater.start(target)
                 }
                 Button("Cancel", role: .cancel) { confirming = nil }
             } message: { _ in
-                Text("The wrap's firmware is erased before any of the new firmware "
-                   + "arrives, so an update that does not finish leaves a wrap that "
-                   + "cannot punch and cannot be woken by shaking. Getting it back "
-                   + "needs a computer and a cable. It also loses the wrap's hand "
-                   + "setting and its unit id.\n\n"
-                   + "Updates over Bluetooth are not reliable on these wraps yet. If "
-                   + "you have a cable, use that instead.")
+                Text("Keep the phone next to the wrap until it finishes. The wrap's "
+                   + "firmware is erased before any of the new firmware arrives, so an "
+                   + "update that stops part way leaves a wrap that needs a computer "
+                   + "and a cable to come back. It also clears the wrap's hand setting, "
+                   + "which the app asks for again afterwards.")
             }
         }
     }
