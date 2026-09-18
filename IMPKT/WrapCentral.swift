@@ -46,6 +46,18 @@ final class WrapCentral: NSObject, ObservableObject {
     /// wrap which has actually gone is gone from the screen. A row that outlives
     /// the wrap it names is a row that can only fail when pressed.
     static let staleAfter: TimeInterval = 15
+    /// How often a connected wrap's signal strength is read off the link itself.
+    ///
+    /// A connected wrap stops advertising, so this is the only live reading that
+    /// exists while the link is up. Without it the strength on screen keeps
+    /// whatever number the last advertisement carried, which is a measurement of
+    /// where the wrap was before it was picked up: a wrap connected from across
+    /// the room still read "Fair" sitting on the desk next to the phone, and that
+    /// looked like a range problem in the radio rather than a stale number.
+    /// Two seconds is one link round trip against a wrap that is already sending
+    /// punches, so it costs nothing worth counting, and it is slow enough that the
+    /// bars settle instead of twitching.
+    static let rssiInterval: TimeInterval = 2
 
     @Published private(set) var poweredOn = false
     @Published private(set) var found: [FoundWrap] = []
@@ -68,6 +80,7 @@ final class WrapCentral: NSObject, ObservableObject {
     private var connectTimers:  [UUID: DispatchWorkItem] = [:]
     private var releaseWaiters: [UUID: [() -> Void]] = [:]
     private var pruneTimer: Timer?
+    private var rssiTimer: Timer?
     private var servicesLeft:   [UUID: Int] = [:]
     private var readWaiters:  [String: Reply] = [:]
     private var writeWaiters: [String: Reply] = [:]
@@ -137,6 +150,24 @@ final class WrapCentral: NSObject, ObservableObject {
         }
     }
 
+    /// Keeps the signal strength of every connected wrap current, and stops itself
+    /// the moment nothing is connected, so an app sitting on a menu is not waking
+    /// the radio every two seconds for a number nobody is looking at.
+    private func startRssiPolling() {
+        guard rssiTimer == nil else { return }
+        rssiTimer = Timer.scheduledTimer(withTimeInterval: WrapCentral.rssiInterval,
+                                         repeats: true) { [weak self] t in
+            guard let self = self else { t.invalidate(); return }
+            let live = self.peripherals.values.filter { $0.state == .connected }
+            guard !live.isEmpty else {
+                t.invalidate()
+                self.rssiTimer = nil
+                return
+            }
+            live.forEach { $0.readRSSI() }
+        }
+    }
+
     func peripheral(_ id: UUID) -> CBPeripheral? {
         if let p = peripherals[id] { return p }
         let found = manager.retrievePeripherals(withIdentifiers: [id]).first
@@ -167,9 +198,12 @@ final class WrapCentral: NSObject, ObservableObject {
     ///
     /// Not `release(id)`, and the difference is the whole of why updates timed out.
     /// A wrap accepts exactly ONE connection and stops advertising while it has
-    /// one. An update targets the bootloader, which is a DIFFERENT peripheral
-    /// identifier from the running firmware, so releasing the target released
-    /// nothing at all: the pilot page's link to the application stayed up, the
+    /// one. An update targets the bootloader, and whether that is the same
+    /// peripheral identifier as the running firmware depends on how the board got
+    /// there: a jump the app asked for hands over peer data and keeps the address,
+    /// a jump over the cable or a restart after an erase does not. So releasing the
+    /// target could release nothing at all, and did: the pilot page's link to the
+    /// application stayed up, the
     /// wrap stayed silent and unconnectable, and the DFU library waited out its
     /// twenty five seconds against a board sitting a foot away, healthy, and busy
     /// talking to us the whole time. The bench tool said it plainly from the other
@@ -265,9 +299,11 @@ final class WrapCentral: NSObject, ObservableObject {
         // updater as a board needing rescue.
         //
         // So the punch service is remembered per peripheral. A wrap that has ever
-        // shown it is not a bootloader unless it says so by name. That cannot mask
-        // a genuine bootloader, because the bootloader advertises on the board's
-        // address plus one and so arrives as a different identifier entirely.
+        // shown it is not a bootloader unless it says so by name, and the name is
+        // the reliable half: when the app asks the wrap to jump it hands the
+        // bootloader its peer data, and a bootloader with valid peer data keeps the
+        // board's own address, so the SAME identifier comes back calling itself
+        // AdaDFU. Nothing here can lean on the address changing.
         if uuids.contains(WrapCentral.punchService) { punchSeen.insert(p.identifier) }
         let looksLikeDfuOnly = uuids.contains(WrapCentral.dfuService)
             && !uuids.contains(WrapCentral.punchService)
@@ -659,15 +695,39 @@ extension WrapCentral: CBPeripheralDelegate {
             found[i].connected = true
             found[i].seen = Date()
         } else {
+            // -127, not 0, and the difference is not cosmetic: 0 dBm is the reading
+            // of a wrap pressed against the antenna, so a row that had never been
+            // measured claimed the strongest signal the scale has and sorted itself
+            // to the top of the update list. -127 is the same "not measured yet"
+            // sentinel `note` uses, and the read below replaces it within a moment.
             found.append(FoundWrap(id: p.identifier,
                                    name: advNames[p.identifier] ?? p.name ?? "This wrap",
-                                   rssi: 0,
+                                   rssi: -127,
                                    seen: Date(),
                                    connected: true))
         }
+        // Once now and every two seconds after, because the first reading should not
+        // wait on the timer: the screen that asked for this connection is on screen.
+        p.readRSSI()
+        startRssiPolling()
         var payload: [String: Any] = ["services": services]
         if let n = advNames[p.identifier] ?? p.name { payload["name"] = n }
         reply(true, payload)
+    }
+
+    func peripheral(_ p: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        // A read that failed leaves the previous number standing, which is exactly
+        // where the screen was before this poll existed. Nothing to announce.
+        guard error == nil else { return }
+        if let i = found.firstIndex(where: { $0.id == p.identifier }) {
+            found[i].rssi = RSSI.intValue
+            // `seen` is deliberately not touched. It means "last heard advertising",
+            // and the update screen reads it to decide whether a wrap is still
+            // sitting in its bootloader. Refreshing it from a link we are holding
+            // ourselves would keep that banner up for as long as the app stayed
+            // connected.
+        }
+        emit?("rssi", ["device": p.identifier.uuidString, "rssi": RSSI.intValue])
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {

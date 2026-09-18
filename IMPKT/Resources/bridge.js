@@ -345,6 +345,20 @@
       if (d._watching) d.dispatchEvent(ev);
     },
 
+    /* Signal strength read off an open link, which Web Bluetooth has no API for:
+       there, strength only ever arrives on an advertisement, and a connected
+       device does not advertise. Deliberately NOT dispatched as
+       advertisementreceived, tempting as that is, because the page treats an
+       advertisement as evidence that a scan is alive and that a wrap is waiting to
+       be connected, and neither is true of a wrap already on the link. */
+    rssi: function (info) {
+      var d = devices[info.device];
+      if (!d) return;
+      var ev = { type: 'rssichanged', device: d, rssi: info.rssi, target: d };
+      bluetooth.dispatchEvent(ev);
+      d.dispatchEvent(ev);
+    },
+
     notify: function (info) {
       var d = devices[info.device];
       if (!d) return;

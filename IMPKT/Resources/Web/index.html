@@ -1092,6 +1092,37 @@
       font-size: var(--text-caption); letter-spacing: var(--tracking-caption);
       color: var(--ash); font-variant-numeric: tabular-nums;
     }
+    /* The name and its pencil. The pencil is quiet until the row is pointed at,
+       because renaming is a thing you go looking for, not a thing the list is
+       for: on a screen whose whole job is "press the hand you want", a second
+       bright control next to every name competes with the one that matters. */
+    .fnd-nm { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .fnd-ren {
+      flex: none; width: 24px; height: 24px; padding: 0; border: 0;
+      border-radius: 50%; background: transparent; color: var(--ash);
+      cursor: pointer; opacity: 0.55; transition: opacity 0.2s, color 0.2s, background 0.2s;
+    }
+    .fnd:hover .fnd-ren, .fnd-ren:focus-visible { opacity: 1; }
+    .fnd-ren:hover { color: var(--red-deep); background: rgba(10,10,12,0.06); }
+    .fnd-ren svg { display: block; margin: auto; width: 13px; height: 13px; }
+    .fnd-ed { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .fnd-ed input {
+      flex: 1 1 auto; min-width: 0; min-height: 30px; padding: 0 9px;
+      border: 1px solid rgba(10,10,12,0.22); border-radius: 9px;
+      background: rgba(255,255,255,0.9); color: inherit;
+      font-family: var(--font); font-size: var(--text-body);
+      letter-spacing: var(--tracking-body);
+    }
+    .fnd-ed button {
+      flex: none; min-height: 30px; padding: 0 11px;
+      border-radius: var(--radius-pill); border: 1px solid var(--red-deep);
+      background: transparent; color: var(--red-deep); cursor: pointer;
+      font-family: var(--font); font-size: var(--text-body-sm);
+      letter-spacing: var(--tracking-body-sm);
+    }
+    .fnd-ed button:hover { background: var(--red-deep); color: var(--white); }
+    .fnd-ed .fnd-ed-x { border-color: rgba(10,10,12,0.22); color: var(--ash); }
+    .fnd-ed .fnd-ed-x:hover { background: rgba(10,10,12,0.06); color: inherit; }
     .fnd-pick { display: flex; gap: 7px; }
     .fnd-pick button {
       min-height: 30px; padding: 0 13px; border-radius: var(--radius-pill);
@@ -3574,7 +3605,25 @@
     renderFound();
   }
 
+  /* Which row, if any, has its name open for editing. Held here rather than in the
+     DOM because these rows are rebuilt wholesale on every advertisement. */
+  let renaming = null;
+  const PENCIL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"'
+    + ' stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"'
+    + ' aria-hidden="true"><path d="M4 20h4l10-10-4-4L4 16v4z"/>'
+    + '<path d="M14.5 5.5 18.5 9.5"/></svg>';
+  /* Fifteen, because the firmware stores the name in sixteen bytes and one of them
+     is the terminator. Enforced on the way in as well as here, since a name
+     arriving longer is truncated by the board rather than refused, and a field that
+     silently shortens what you typed is worse than one that stops you typing it. */
+  const NAME_MAX = 15;
+
   function renderFound() {
+    /* A rename in progress freezes the list. Advertisements land several times a
+       second and each one rebuilds every row, which would throw away the input
+       element, the caret position and whatever had been typed into it: the field
+       emptied itself as fast as anybody could type. */
+    if (renaming && $('ren-in')) return;
     const rows = Array.from(FOUND.values())
       .sort((a, b) => (b.rssi == null ? -999 : b.rssi) - (a.rssi == null ? -999 : a.rssi));
     $('found').innerHTML = rows.map(f => {
@@ -3609,9 +3658,28 @@
               <button type="button" data-id="${esc(f.id)}" data-side="right"
                 ${WRAPS.right.device ? 'disabled' : ''}>Right hand</button>
             </span>`;
+      /* The pencil is only offered on a connected wrap, because the name lives in
+         the wrap's own flash and putting it there means writing to it. Renaming a
+         row this page can only hear would have to be a nickname held in this
+         browser, which is the opposite of the point: a name you give a wrap is
+         supposed to come back on a different phone and after a flat battery. */
+      const nameCell = renaming === f.id
+        ? `<span class="fnd-ed">
+            <input type="text" id="ren-in" maxlength="${NAME_MAX}"
+              value="${esc(f.name)}" autocomplete="off" spellcheck="false"
+              aria-label="Name for this wrap">
+            <button type="button" data-ren-save="${esc(f.id)}">Save</button>
+            <button type="button" class="fnd-ed-x" data-ren-cancel="1">Cancel</button>
+          </span>`
+        : `<span class="fnd-nm">
+            <span class="fnd-n">${esc(f.name)}</span>
+            ${side ? `<button class="fnd-ren" type="button" data-ren="${esc(f.id)}"
+                        title="Rename this wrap"
+                        aria-label="Rename this wrap">${PENCIL}</button>` : ''}
+          </span>`;
       return `<li class="fnd">
         <span class="sig" aria-hidden="true">${bars}</span>
-        <span><span class="fnd-n">${esc(f.name)}</span>
+        <span>${nameCell}
           <span class="fnd-m">${meas}</span></span>
         ${act}
       </li>`;
@@ -3685,11 +3753,78 @@
   }
 
   $('found').addEventListener('click', e => {
+    const pen = e.target.closest('[data-ren]');
+    if (pen) {
+      renaming = pen.dataset.ren;
+      renderFound();                      /* no input on screen yet, so this paints */
+      const box = $('ren-in');
+      if (box) { box.focus(); box.select(); }
+      return;
+    }
+    const save = e.target.closest('[data-ren-save]');
+    if (save) {
+      renameWrap(save.dataset.renSave, ($('ren-in') || {}).value || '');
+      return;
+    }
+    if (e.target.closest('[data-ren-cancel]')) { renaming = null; renderFound(); return; }
+
     const b = e.target.closest('.fnd-pick button');
     if (!b) return;
     const f = FOUND.get(b.dataset.id);
     if (f) assign(b.dataset.side, f);
   });
+
+  /* Enter and Escape, because a one-field form that can only be finished by
+     aiming at a button is a form that fights the keyboard it just opened. */
+  $('found').addEventListener('keydown', e => {
+    if (e.target.id !== 'ren-in') return;
+    if (e.key === 'Enter') { e.preventDefault(); renameWrap(renaming, e.target.value); }
+    else if (e.key === 'Escape') { renaming = null; renderFound(); }
+  });
+
+  /* Control opcode 0x33 with the name as plain bytes, which is the firmware's own
+     NAME command. It goes into the wrap's flash beside the hand and the pair id, so
+     it survives the battery going flat, this browser being cleared, and a different
+     phone entirely. An empty name is not a failure: it clears the label and the
+     wrap goes back to calling itself BOXING-01L or BOXING-01R.
+
+     Nothing is going to confirm the new name back to this page, and that is not a
+     gap in the firmware: the name lives in the advertising packet, and a connected
+     wrap does not advertise. The write being acknowledged is the confirmation, so
+     the row is relabelled from what was typed. The next advertisement, whenever the
+     link drops, carries the same string from the board itself. */
+  async function renameWrap(id, text) {
+    const f = id ? FOUND.get(id) : null;
+    renaming = null;
+    if (!f) { renderFound(); return; }
+    const side = sideOf(f.device);
+    if (!side) {
+      findState('That wrap has to be connected before it can be renamed');
+      renderFound();
+      return;
+    }
+    /* Filtered here as well as in the firmware, and to the same rule: this string
+       ends up in an advertising packet, where a stray byte is not a typo, it is a
+       malformed packet. */
+    const want = String(text).replace(/[^\x20-\x7E]/g, '').trim().slice(0, NAME_MAX);
+    try {
+      const svc = await f.device.gatt.getPrimaryService(BLE.SERVICE);
+      const ctrl = await svc.getCharacteristic(BLE.CTRL);
+      const body = [];
+      for (let i = 0; i < want.length; i++) body.push(want.charCodeAt(i));
+      await ctrl.writeValue(new Uint8Array([0x33].concat(body)));
+      f.name = want || ('BOXING-01' + (side === 'left' ? 'L' : 'R'));
+      findState(want ? 'Renamed to ' + want : 'Name cleared, back to ' + f.name);
+    } catch (err) {
+      /* Firmware older than this opcode answers a 0x33 by ignoring it, and a build
+         with no control characteristic refuses the lookup. Both are worth saying
+         out loud: the alternative is a rename that looks like it worked on screen
+         and is gone the moment the wrap next advertises. */
+      findState('That wrap would not take a new name. Renaming over Bluetooth needs '
+        + 'firmware v2.9 or newer; over a cable the NAME command does it on any build.');
+    }
+    renderFound();
+  }
 
   /* Choosing a hand is the whole point of this list, so it is also where the
      connection is made: one press says which hand and connects it.
@@ -3797,6 +3932,24 @@
   function bringUpSoon() {
     if (bringTimer) return;
     bringTimer = setTimeout(() => { bringTimer = null; bringUpPair(); }, 400);
+  }
+
+  /* The app reads strength off an open link every couple of seconds, because a
+     connected wrap stops advertising and so the bars had nothing to update from:
+     they kept the reading taken at the moment it was picked up, metres away, and
+     went on showing it while the wrap sat next to the phone. Nothing else to do
+     here, deliberately: this is a number about a wrap that is already connected,
+     so none of the connecting that onAdv does applies. */
+  function onRssi(e) {
+    const side = sideOf(e.device);
+    if (side) WRAPS[side].rssiLive = true;
+    sawDevice(e.device, e.rssi);
+  }
+  /* Guarded on navigator.bluetooth itself, not just the method: one file serves
+     the website too, and there a desktop browser with Bluetooth switched off has
+     no navigator.bluetooth at all. */
+  if (navigator.bluetooth && navigator.bluetooth.addEventListener) {
+    navigator.bluetooth.addEventListener('rssichanged', onRssi);
   }
 
   function onAdv(e) {
@@ -4057,10 +4210,17 @@
     const w = WRAPS[side];
     const live = !!(w.device && w.device.gatt && w.device.gatt.connected);
     drawSig($('sig-' + side), sigLevel(w.rssi));
+    /* ", when found" is kept, but only where it is still true. A connected wrap
+       does not advertise, so a reading that came from an advertisement really is a
+       measurement of where the wrap was before it was picked up. In the app the
+       strength is now read off the open link every couple of seconds and the
+       caveat would be a lie; in a desktop browser there is no such reading, so it
+       stays. rssiLive is what tells the two apart, and it is set by the reading
+       arriving rather than by guessing at the browser. */
     $('k-' + side + '-sig').textContent = w.rssi == null
       ? (live ? 'Connected, strength not given' : 'Not known')
       : sigWord(sigLevel(w.rssi)) + ', ' + w.rssi + ' dBm'
-        + (live ? ', when found' : '');
+        + (live && !w.rssiLive ? ', when found' : '');
     $('k-' + side + '-heard').textContent = w.heard ? ago(w.heard)
       : live ? 'Waiting' : 'Not yet';
     $('k-' + side + '-batt').textContent = w.battTxt || (live ? 'Not reported' : 'Not known');
