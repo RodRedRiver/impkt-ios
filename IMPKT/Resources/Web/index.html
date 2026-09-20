@@ -1184,7 +1184,51 @@
       .prog-main, .connect { grid-column: 1; grid-row: auto; }
       .connect { position: static; }
     }
-    @media (max-width: 620px) { .drill-grid { grid-template-columns: 1fr; } }
+    /* Two across on a phone as well. Six drills in one column is a list four
+       screens long that has to be scrolled to be counted, and the count is the
+       first thing a pilot wants from this screen: the programme is a fixed set of
+       seven things, not a feed. What gives way instead is the card's own layout,
+       because at 390px a card is about 170px wide and a 46px diagram beside the
+       title leaves the title 110px, which is two words a line. The diagram goes
+       on top of the title, where it is still the first thing seen. */
+    @media (max-width: 620px) {
+      .drill-grid { gap: 10px; }
+      .dcard {
+        grid-template-columns: minmax(0, 1fr);
+        padding: 14px; row-gap: 10px;
+      }
+      .dcard-ico { grid-row: auto; width: 38px; height: 38px; }
+      .dcard-ico svg { width: 24px; height: 24px; }
+      .dcard-foot {
+        grid-column: 1; flex-direction: column;
+        align-items: stretch; gap: 6px;
+      }
+      .dcard-when { text-align: center; }
+    }
+
+    /* ── NO WRAP, NO DRILL ──────────────────────────────────────
+       A drill run with nothing on your wrists records nothing, and the pilot
+       finds that out twelve minutes later. So the cards go back and stop being
+       pressable until a wrap is on, with the reason above them rather than
+       inside each one.
+
+       Only where pairing is possible, which is the app and a desktop Chrome.
+       This same file is the website, and on a browser that cannot pair at all
+       the pad and the space bar are the input, so locking there would lock
+       everybody out of a page that works. See paintDrillLock. */
+    .drill-lock {
+      margin-top: 16px; padding: 12px 14px;
+      border: 1px solid rgba(196,30,58,0.28); border-radius: var(--r-s);
+      font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
+      color: var(--red-deep);
+    }
+    .drill-grid.locked {
+      opacity: 0.38; transition: opacity 0.3s var(--ease-smooth);
+      /* Belt and braces with `inert`, which is what actually takes the cards out
+         of the tab order and out of reach of a tap. The handler refuses as well,
+         because a browser without `inert` would otherwise dim a live button. */
+      pointer-events: none;
+    }
 
     /* ── THE WRAPS PANEL ────────────────────────────────────────
        One pane, sticky, holding the only two objects this site talks to. Both
@@ -1280,9 +1324,14 @@
       font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
       color: var(--ash);
     }
+    /* Not a card. The drill takes the whole window, so a bordered white panel
+       inside it was a box drawn around the only thing on the screen: the
+       instruction, the bar, the circles and the counts were all one object
+       already, and the border said they were a section of a page that has
+       nothing else on it. The padding goes with it, so the instruction starts at
+       the same left edge as the drill's own title. */
     .run-stage {
       width: 100%; max-width: 900px; margin-top: 16px;
-      padding: 22px 24px 20px; border-radius: var(--r-l);
       text-align: left;
     }
 
@@ -1295,17 +1344,13 @@
     .hub.solo { padding: clamp(14px, 2.6vh, 34px) 20px clamp(14px, 2.4vh, 34px); }
     .hub.solo .name-title { display: none; }
     .hub.solo #run { padding-top: 0; }
-    /* Start is the only thing on this screen anybody has to press, and in the
-       takeover it was below the block list and so below the fold. The list is
-       reference, not action, so in here the buttons go above it. */
     .hub.solo #run { display: flex; flex-direction: column; }
-    .hub.solo #run .run-list { order: 1; }
     /* The two mid-drill controls go to the very top in the takeover, above the
        drill's own name. The stage is a screenful on its own now that the circles
        are the size they should be, and a way out of a twelve-minute drill that
        needs a scroll to reach is not a way out. */
     .hub.solo #run .run-ctl { order: -1; margin: 0 0 14px; }
-    .hub.solo .run-stage { max-width: 1000px; padding: 26px 28px 24px; }
+    .hub.solo .run-stage { max-width: 1000px; }
     .hub.solo .run-t { font-size: clamp(17px, 1.7vw, 21px); color: var(--ash); }
     .hub.solo .run-t .dcard-n { color: var(--red-deep); }
     @media (min-height: 760px) {
@@ -1463,9 +1508,13 @@
     }
     /* Paused is a state of the whole screen, not a word in a corner. The stage
        goes quiet and the instruction stays exactly where it was, because what
-       you were doing is what you go back to. */
-    .run-stage.paused { background: rgba(255,255,255,0.42); }
+       you were doing is what you go back to.
+
+       It used to lift the panel's background as well, which was the panel's to
+       lift; with the panel gone, fading what you were doing is the whole signal
+       and it is the one that was doing the work. */
     .run-stage.paused .run-head { opacity: 0.4; }
+    .run-stage.paused .run-cue { opacity: 0.4; }
 
     /* ── THE PROGRESSION RINGS ──────────────────────────────────
        One ring per punch the drill asks for, filling as that punch is thrown.
@@ -1536,50 +1585,11 @@
       font-size: var(--text-caption); letter-spacing: var(--tracking-caption);
       color: var(--ash);
     }
-    .run-list { list-style: none; width: 100%; max-width: 900px; margin-top: 18px;
-                text-align: left; }
-    .run-list .blk { grid-template-columns: 74px 1fr 100px; }
-    .run-list .now { color: var(--carbon); }
-    .run-list .now .blk-t { color: var(--red); font-weight: 600; }
-    .run-list .done { opacity: 0.45; }
-    /* The timeline. A definition list would be the honest element here, but the
-       three columns have to line up down the whole drill and a grid of rows is
-       the only thing that does that without a table's semantics, which this is
-       not — nothing in here is looked up by row and column. */
-    .blk {
-      /* The label column is a fixed width rather than `auto` because every row
-         is its own grid: on `auto` a row whose chip reads "jab + cross" is
-         wider than the row above it, and the whole timeline goes ragged down
-         the right edge. 100px holds the longest label there is. */
-      display: grid; grid-template-columns: 74px 1fr 100px;
-      gap: 6px 16px; align-items: baseline;
-      padding: 11px 0; border-top: 1px solid var(--frost);
-      font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
-    }
-    .blk-t { color: var(--ash); font-variant-numeric: tabular-nums; }
-    /* The punch the block is for, which is the one word in the row that has to
-       be found at a glance mid-round. It is a weight change and a tighter
-       tracking rather than bold: bold in the middle of a sentence is a shout,
-       and this is a label. */
-    .blk-d b {
-      font-weight: 500; letter-spacing: -0.008em; font-style: normal;
-    }
-    /* What the block is being collected as. Monospaced-feeling rather than
-       actually monospaced: these are the class names that end up in the
-       dataset, and they should look like values, not like prose. */
-    .blk-l {
-      justify-self: end;
-      padding: 3px 9px; border-radius: var(--radius-pill);
-      border: 1px solid var(--pebble);
-      font-size: 11px; letter-spacing: 0.04em;
-      color: var(--ash); white-space: nowrap;
-    }
-    .blk-l.neg { border-color: var(--frost); background: var(--frost); }
-    .blk-l.hit { border-color: rgba(196,30,58,0.34); color: var(--red-deep); }
+    /* The drill's timeline was printed under the stage, one row per block with
+       its clock and the label it is collected under. Gone with the markup that
+       used it: .blk and its three columns were only ever that list. */
 
     @media (max-width: 700px) {
-      .blk, .run-list .blk { grid-template-columns: 62px 1fr; }
-      .blk-l { grid-column: 2; justify-self: start; margin-top: 2px; }
       .run-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
@@ -2039,6 +2049,10 @@
             nothing and a restarted drill costs twelve minutes.
           </p>
 
+          <!-- Above the cards, not inside them: it is one fact about all seven,
+               and it is the reason they are greyed out, which has to be readable
+               before the thing it explains. -->
+          <p class="drill-lock" id="drill-lock" hidden></p>
           <div class="drill-grid" id="drill-grid"></div>
 
           <p class="prog-b" id="band-note"></p>
@@ -2124,7 +2138,7 @@
         <p class="run-where" id="run-where"></p>
       </div>
 
-      <div class="glass run-stage" id="run-stage">
+      <div class="run-stage" id="run-stage">
         <p class="run-phase" id="run-phase">Not started</p>
         <!-- What you are doing, in the largest black text on the site, above the
              bar that says how far through you are. Everything else on this
@@ -2187,7 +2201,11 @@
         </div>
       </div>
 
-      <ol class="run-list" id="run-list"></ol>
+      <!-- The whole timeline used to be printed here, every block of the twelve
+           minutes with its clock and its label. It was reference nobody read:
+           what you are doing is the biggest thing on the screen and what is left
+           is on the bar under it, so a list of the other eleven minutes was a
+           second drill to keep track of while doing the first. -->
 
       <!-- One, while a drill is running: the way out. There was a Voice on button
            beside it and there is no voice any more. Pausing and flagging a rep are
@@ -3197,11 +3215,55 @@
        Connect: whether this browser can pair at all is not something to find
        out by failing. */
     connectReady();
+    paintDrillLock();
+  }
+
+  /* Can this browser pair at all. Same two tests connectReady() makes and none
+     of its writing to the panel, because this is asked once a second and a note
+     that rewrites itself every second is a note that cannot be read. */
+  const canPair = () => !!navigator.bluetooth && !!window.isSecureContext;
+
+  /* How many wraps are actually on the link right now. WRAPS holds a device per
+     hand whether or not it is connected, so the gatt flag is the question and the
+     slot being filled is not. */
+  const liveWraps = () => ['left', 'right'].filter(s =>
+    WRAPS[s] && WRAPS[s].device && WRAPS[s].device.gatt
+    && WRAPS[s].device.gatt.connected).length;
+
+  /* The drills go back and stop being pressable with nothing connected.
+     Twelve minutes of shadow boxing that recorded nothing is the one failure on
+     this page that cannot be undone, and it announces itself at the end. */
+  function paintDrillLock() {
+    const grid = $('drill-grid');
+    const note = $('drill-lock');
+    if (!grid || !note) return;
+    const on = liveWraps();
+    const lock = canPair() && on === 0;
+    grid.classList.toggle('locked', lock);
+    /* Takes the buttons out of the tab order and out of reach of a tap, which
+       opacity alone does not. Ignored by a browser that has never heard of it,
+       which is why the click handler refuses as well. */
+    grid.inert = lock;
+    note.hidden = !lock && on !== 1;
+    if (lock) {
+      note.textContent = 'Connect a wrap first. The drills are how the wraps '
+        + 'learn your punches, so one run with nothing on your wrists is twelve '
+        + 'minutes that recorded nothing. Connect on the Devices tab, or in the '
+        + 'panel on this screen.';
+    } else if (on === 1) {
+      note.textContent = 'One wrap is connected. The drill will run, and the hand '
+        + 'without a wrap on it records nothing, so the pair is worth the extra '
+        + 'minute before a twelve minute drill.';
+    }
   }
 
   $('drill-grid').addEventListener('click', e => {
     const b = e.target.closest('.dcard-go');
-    if (b) openRun(DRILLS[+b.dataset.drill]);
+    /* The class, not the flag, so there is one answer to whether the cards are
+       live and it is the one on screen. */
+    if (b && !$('drill-grid').classList.contains('locked')) {
+      openRun(DRILLS[+b.dataset.drill]);
+    }
   });
 
   /* ── 7. THE FITTING ───────────────────────────────────
@@ -3956,6 +4018,50 @@
     if (!scanned) offerGrant(true);
   }
 
+  /* The search above with the search step taken out of it: the same two routes,
+     the same list, and not one line of it on screen.
+
+     The caller is the app's Devices tab, which is native, so a search that
+     painted this step would be writing on a screen nobody is looking at and
+     leaving "Stop searching" on a button that had stopped. It waits rather than
+     returning immediately because a scan is not an answer, it is a few seconds
+     of answers, and the tab that asked has to know when to stop spinning. */
+  async function searchQuietly(ms) {
+    if (!canPair()) return { ok: false, why: 'no bluetooth' };
+    if (RUN.live) return { ok: false, why: 'a drill is running' };
+    /* A timer left over from this page's own search would call quiet() part way
+       through, which stops the scan this is about to start. */
+    clearTimeout(scanTimer);
+    scanTimer = null;
+
+    for (const d of await permitted()) {
+      sawDevice(d, null);
+      await watchOne(d);
+    }
+    await bringUpPair();
+
+    let scanned = false;
+    if (navigator.bluetooth.requestLEScan) {
+      try {
+        navigator.bluetooth.addEventListener('advertisementreceived', onAdv);
+        scanning = await navigator.bluetooth.requestLEScan({
+          filters: [{ services: [BLE.SERVICE] }], keepRepeatedDevices: true
+        });
+        scanned = true;
+      } catch (err) {
+        navigator.bluetooth.removeEventListener('advertisementreceived', onAdv);
+        scanning = null;
+      }
+    }
+
+    await new Promise(r => setTimeout(r, Math.min(20000, Math.max(1000, +ms || 4000))));
+    /* Again at the end, because the wraps that arrived during the wait are the
+       ones the first sweep could not have seen. */
+    await bringUpPair();
+    stopScan();
+    return { ok: true, scanned: scanned, found: FOUND.size };
+  }
+
   function stopScan() {
     clearTimeout(scanTimer);
     scanTimer = null;
@@ -4101,6 +4207,9 @@
       state === 'live' ? 'Disconnect' : 'Connect';
     row.querySelector('.wrap-btn').disabled = state === 'busy';
     paintWrap(side);
+    /* Every route in and out of a connection ends here, so this is the one place
+       the drills have to be told that the answer changed. */
+    paintDrillLock();
   }
 
   /* How long ago, in the units the number deserves. Seconds while it matters,
@@ -4147,6 +4256,11 @@
     if (!$('wrap-left')) return;
     paintWrap('left');
     paintWrap('right');
+    /* Also from here, because a link can go down without anything calling
+       wrapUI: a wrap out of range drops the connection and the page hears about
+       it through an event that a backgrounded tab may not run. The lock is a
+       question with a cheap answer, so it is asked rather than remembered. */
+    paintDrillLock();
   }, 1000);
 
   function connectNote(msg) { $('connect-note').textContent = msg; }
@@ -4172,15 +4286,17 @@
     return true;
   }
 
-  /* The panel's own Connect button, for a wrap being reconnected without going
-     back through the fitting. It never opens a browser dialog: this button means
-     "connect the wrap you already have for this hand", and the two places a wrap
-     comes from are both dialog-free. If there is genuinely nothing to connect to,
-     the honest answer is not a chooser, it is the setup step, which is where
-     finding a wrap lives and where the page can explain itself. */
-  async function pair(side) {
-    if (WRAPS[side].device) { drop(side, 'Not connected'); return; }
-    if (!connectReady()) return;
+  /* Connecting one hand, with no screen in it. It never opens a browser dialog:
+     this means "connect the wrap you already have for this hand", and the two
+     places a wrap comes from are both dialog-free.
+     Split out from the panel button because there are two callers now and each
+     has its own answer to finding nothing: the panel goes to the fitting step,
+     and the app's Devices tab says so where it stands. Returns a reason rather
+     than acting on one, so this function has no opinion about either. */
+  async function connectSide(side) {
+    const w = WRAPS[side];
+    if (w.device && w.device.gatt && w.device.gatt.connected) return { ok: true };
+    if (!canPair()) return { ok: false, why: 'no bluetooth' };
 
     wrapUI(side, 'busy', 'Looking for a wrap');
     /* The wrap for THIS hand first, and a wrap that says it is the other hand not
@@ -4198,19 +4314,31 @@
 
     if (!device) {
       wrapUI(side, '', 'Not connected');
-      connectNote('There is no wrap for your ' + side + ' hand to connect to yet. '
-        + 'Finding them happens in the setup step, in this page, so that is where '
-        + 'this goes.');
-      fitGo(STEPS.length - 1);
-      show(fitPane);
-      return;
+      return { ok: false, why: 'none found' };
     }
-    if (!await connectWrap(side, device, null)) return;
+    if (!await connectWrap(side, device, null)) return { ok: false, why: 'refused' };
     /* One press, both hands. A pilot who reconnects one wrap wants the pair, not
        the one they happened to press, and the other hand costs nothing to bring
        up if it says which hand it is. Sweeping from here rather than from inside
        connectWrap, which is what the sweep itself calls. */
     await bringUpPair();
+    return { ok: true };
+  }
+
+  /* The panel's own Connect button, which is a toggle. If there is genuinely
+     nothing to connect to, the honest answer is not a chooser, it is the setup
+     step, which is where finding a wrap lives and where the page can explain
+     itself. */
+  async function pair(side) {
+    if (WRAPS[side].device) { drop(side, 'Not connected'); return; }
+    if (!connectReady()) return;
+    const r = await connectSide(side);
+    if (r.ok || r.why !== 'none found') return;
+    connectNote('There is no wrap for your ' + side + ' hand to connect to yet. '
+      + 'Finding them happens in the setup step, in this page, so that is where '
+      + 'this goes.');
+    fitGo(STEPS.length - 1);
+    show(fitPane);
   }
 
   /* Every route to a connected wrap ends here: the search list, the panel
@@ -4546,13 +4674,6 @@
     $('run-where').textContent = d.guided
       ? d.where + ' · guided, block by block'
       : d.where + ' · the plan. The guided run for this one is not built yet.';
-    $('run-list').innerHTML = RUN.blocks.map((b, i) => `
-      <li class="blk" data-i="${i}">
-        <span class="blk-t num">${b.time}</span>
-        <span class="blk-d">${b.text}</span>
-        <span class="blk-l ${b.kind}">${b.label}</span>
-      </li>`).join('');
-
     $('run-go').hidden = !d.guided;
     /* The circle is the beat and the punch input both, so it belongs to the live
        run and to nothing else: there is no beat to keep on a ready screen and
@@ -5023,10 +5144,6 @@
          block's fill, which would read as a beat that is never coming. */
       if (!b.every) beatReset();
       $('run-say').textContent = b.text.replace(/<[^>]+>/g, '');
-      $('run-list').querySelectorAll('.blk').forEach((li, j) => {
-        li.classList.toggle('now', j === i);
-        li.classList.toggle('done', i >= 0 && j < i);
-      });
       setMark('', '');
       /* A tempo with no reps behind it gets a click here to start it off. A
          prompted block does not: its first ask is on the same second as the
@@ -5125,7 +5242,12 @@
       $('run-cue').innerHTML = asked + RUN.punches
         + (RUN.punches === 1 ? ' punch' : ' punches') + ' logged'
         + (tally ? ': ' + tally : '') + '. '
-        + 'The recording is finished with, so it goes now.';
+        /* Which of the two actually happens, rather than the one that used to be
+           assumed: with no project in this copy of the page the recording is kept
+           here, and saying it goes now would be a sentence the pilot could not
+           check and that was not true. */
+        + (dest() ? 'The recording is finished with, so it goes now.'
+                  : 'The recording is kept on this phone.');
       setMark('', '');
       bell();
       $('run-blk').textContent = '0:00';
@@ -5497,14 +5619,13 @@
   async function sendSession(rec) {
     LAST = rec;
     if (!dest()) {
-      /* Kept first and counted afterwards. keep() replaces a recording with the
-         same id rather than adding one, so a second press on the same drill would
-         otherwise be announced as one more waiting than there are. */
+      /* Kept, and nothing said about it. There is no project in the shipped page,
+         so this is the path every finished drill takes today, and what it used to
+         put on screen was a panel explaining that the page had nowhere to send
+         things: an operator's problem, announced to a pilot who has just finished
+         twelve minutes and cannot act on it. The drill's own last line says the
+         recording is kept, and the app's Profile tab counts what is waiting. */
       keep(rec);
-      const waiting = outbox().length;
-      sendState('Nothing to send it to yet, so it is kept in this browser. '
-        + waiting + (waiting === 1 ? ' recording is' : ' recordings are') + ' waiting. '
-        + 'Download it if you want it out of here today.', false);
       return;
     }
     sendState('Sending the recording.', true);
@@ -5841,6 +5962,144 @@
     fitName();
     paintRamp();   /* a refit is a new word width, so a new ramp width */
   });
+
+  /* ── WHAT THE APP'S OTHER TABS TALK TO ────────────────
+     The iPhone app is this page in a web view plus three native tabs, and two of
+     them are windows onto this page rather than second copies of it: Devices
+     connects the wraps and Profile edits the measurements. Both call in here.
+
+     Which is not the same shape as bridge.js, and the difference is the point.
+     That is the app answering the page, standing in for Web Bluetooth so the same
+     file works in both places. This is the page answering the app, and it exists
+     so that there is still exactly one thing that owns a Bluetooth link and one
+     thing that writes a profile. A native tab that connected on its own would
+     hold the only link to a wrap whose punches have to arrive in a drill running
+     in here, and a native tab that wrote its own copy of a weight would disagree
+     with this one the first time either side changed.
+
+     Nothing here is new behaviour. Every entry is a function this page already
+     had, reached by a name the app can say, and the JSON is what a native screen
+     reads: one string, one decode. Absent in a browser, which costs nothing,
+     because in a browser the panel and the setup screen are on the page. */
+  window.__impktApp = {
+
+    /* Everything both tabs read, in one round trip, because they poll it. */
+    state: function () {
+      var side = function (s) {
+        var w = WRAPS[s] || {};
+        var live = !!(w.device && w.device.gatt && w.device.gatt.connected);
+        return {
+          on: live,
+          id: (w.device && w.device.id) || '',
+          name: (w.device && w.device.name) || '',
+          /* The line the panel is showing, rather than a second wording of it:
+             "Connected, older firmware" and "Lost the wrap" are distinctions the
+             page already makes and the app has no business remaking. */
+          status: (document.getElementById('st-' + s) || {}).textContent || '',
+          rssi: (typeof w.rssi === 'number') ? w.rssi : null,
+          battery: w.battTxt || '',
+          punches: w.punches || 0
+        };
+      };
+      return JSON.stringify({
+        canPair: canPair(),
+        /* Past the gate. Before that there is no pilot, no profile and nothing
+           the wraps could be recording for. */
+        activated: !!PILOT,
+        /* A drill is on the clock. Connecting or disconnecting mid-drill is how a
+           recording loses its second half, so the app greys its buttons out. */
+        running: !!RUN.live,
+        left: side('left'),
+        right: side('right')
+      });
+    },
+
+    /* Look for wraps, then answer. Resolves when the search is over, not when it
+       starts, so the tab that asked knows when to stop spinning. Anything it
+       turns up that says which hand it is on is connected on the way through,
+       which for a returning pilot is the whole job and no press at all. */
+    search: function (ms) {
+      return searchQuietly(ms).then(function (r) { return JSON.stringify(r); });
+    },
+
+    /* Connect one hand. The result rather than the reason: the app says what it
+       means in its own words, and "none found" from a tab that is a list of what
+       is nearby deserves a different sentence than it does from the panel. */
+    connect: function (s) {
+      if (s !== 'left' && s !== 'right') {
+        return Promise.resolve(JSON.stringify({ ok: false, why: 'no such hand' }));
+      }
+      return connectSide(s).then(function (r) { return JSON.stringify(r); });
+    },
+
+    disconnect: function (s) {
+      if (s !== 'left' && s !== 'right') return false;
+      drop(s, 'Not connected');
+      return true;
+    },
+
+    /* The profile, changed one field at a time, through the same controls the
+       setup screen uses and then saved by the same line that saves it there.
+
+       Through the controls on purpose. Every number in the profile is a term in a
+       force estimate, and the reason the setup screen has no text fields is that
+       a mistyped weight does not fail loudly, it makes every session afterwards
+       quietly wrong. A slider cannot be off by a factor of ten, and a native
+       stepper writing straight to localStorage could. So a patch is applied to
+       the sliders, which clamp it, and what comes back out is what was stored. */
+    saveProfile: function (patch) {
+      patch = patch || {};
+      /* The controls first hold what is stored, so a patch of one field cannot
+         quietly rewrite the other six with whatever the sliders were left on. */
+      restore();
+      var range = function (id, v) {
+        var el = document.getElementById(id);
+        if (el == null || typeof v !== 'number' || !isFinite(v)) return;
+        var min = +el.min, step = +el.step || 1;
+        /* Snapped to the slider's own step rather than to a whole number: the
+           weight moves in half kilos, and a native screen showing pounds sends
+           back a converted number, so rounding to 1kg here would walk the value
+           a pound at a time every time somebody opened the screen. Two decimal
+           places because min + n * 0.5 is not always exact in binary. */
+        var snapped = min + Math.round((v - min) / step) * step;
+        el.value = Math.min(+el.max, Math.max(min, Math.round(snapped * 100) / 100));
+      };
+      var radio = function (name, v) {
+        if (v == null) return;
+        var el = setup.querySelector('input[name="' + name + '"][value="' + v + '"]');
+        /* No such option means the app asked for something this page does not
+           offer, and the answer to that is to leave the stored value alone. */
+        if (el) el.checked = true;
+      };
+      radio('units', patch.units);
+      range('r-weight', patch.weightKg);
+      range('r-height', patch.heightCm);
+      /* 0 is the "not set" notch and a real value, so it is passed through rather
+         than treated as absent. The gap between 0 and 150 is closed the same way
+         the slider's own input handler closes it, because nobody's arms are a
+         centimetre long and setting a value in code does not fire that handler. */
+      if (patch.reachCm === 0) document.getElementById('r-reach').value = 0;
+      else if (typeof patch.reachCm === 'number' && patch.reachCm > 0
+               && patch.reachCm < 150) {
+        document.getElementById('r-reach').value = patch.reachCm < 75 ? 0 : 150;
+      } else range('r-reach', patch.reachCm);
+      radio('stance', patch.stance);
+      radio('level', patch.level);
+      if (patch.gloveOz != null) radio('glove', String(patch.gloveOz));
+
+      var p = profile();
+      var ok = true;
+      try { localStorage.setItem(KEY, JSON.stringify(p)); }
+      catch (err) { ok = false; }
+      /* The page catches up with itself: the readouts under the sliders, and the
+         programme, which reads the stance to decide whether a hook is a left or a
+         right. Otherwise a pilot who switched to southpaw in the app would find
+         the drills still addressing an orthodox fighter. */
+      showMeasures();
+      renderDrills();
+      return JSON.stringify({ ok: ok, profile: p });
+    }
+  };
 
   /* Both sizes are the result of measuring text, and text measured in a fallback
      face is the wrong measurement: Plex is wider than the system sans at the same

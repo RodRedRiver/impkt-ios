@@ -1,13 +1,20 @@
 import SwiftUI
 
-/// What the phone can hear, and what it remembers.
+/// Connecting your wraps, and what the phone can hear.
+///
+/// Two jobs, in that order. The top of the screen is the connection page: one row per
+/// hand, and one button that goes looking. The rest answers the question that gets
+/// asked when something is not working, whether the phone can hear the wrap at all,
+/// how well, which hand it thinks it is on, and whether the app has met it before.
 ///
 /// The Update tab has a list of wraps too and it is not this one. That list exists to
 /// be pressed, and every row in it is a target for a firmware image, so it says as
-/// little as it can get away with. This one answers the question that gets asked when
-/// something is not working: whether the phone can hear the wrap at all, how well,
-/// which hand it thinks it is on, and whether the app is sure it has met it before.
-/// Nothing here changes anything on a wrap.
+/// little as it can get away with.
+///
+/// Connecting happens in the page and not here. See PageControl: the punches from a
+/// wrap have to arrive inside the drill running in the web view, so the page holds the
+/// links and this screen asks it to. Which is also why the rows read the page's own
+/// words for what a hand is doing rather than inventing a second set.
 struct DevicesView: View {
 
     @ObservedObject private var central = WrapCentral.shared
@@ -20,6 +27,19 @@ struct DevicesView: View {
     /// Set by pressing Forget, cleared by answering the question.
     @State private var forgetting: UUID?
 
+    /// What the page says about both hands, re-read every second and a bit while this
+    /// screen is up, because a wrap can drop on its own and a drill can start in the
+    /// tab next door. Nil until the first answer arrives.
+    @State private var page: PageControl.State?
+    @State private var asked = false
+    /// The hand with a press in flight, so one row can spin without the other going
+    /// quiet, and so the same button cannot be pressed twice.
+    @State private var busy: PageControl.Side?
+    @State private var searching = false
+    /// The last thing a press led to, when it led to nothing visible.
+    @State private var note = ""
+    @State private var ticker: Timer?
+
     var body: some View {
         NavigationView {
             List {
@@ -28,6 +48,8 @@ struct DevicesView: View {
                 } header: {
                     Text(state)
                 }
+
+                wraps()
 
                 Section("Nearby") {
                     if central.found.isEmpty {
@@ -52,9 +74,9 @@ struct DevicesView: View {
                 Section("Remembered") {
                     if absent.isEmpty {
                         Text(remembered.isEmpty
-                             ? "Nothing yet. A wrap is remembered the first time the Test "
-                               + "tab connects to it, and stays remembered so it never has "
-                               + "to be picked twice."
+                             ? "Nothing yet. A wrap is remembered the first time it is "
+                               + "connected, here or on the Test tab, and stays remembered "
+                               + "so it never has to be picked twice."
                              : "Every wrap this phone knows is in the list above.")
                             .font(.footnote).foregroundColor(.secondary)
                     }
@@ -77,8 +99,8 @@ struct DevicesView: View {
                     Text("None of this goes over the internet. It is what the phone's own "
                          + "radio can hear in the room, and Bluetooth reaches a few metres. "
                          + "A wrap stops advertising while something is connected to it, so "
-                         + "a wrap the Test tab is talking to is listed from the link "
-                         + "itself rather than from the air.")
+                         + "a connected wrap is listed from the link itself rather than "
+                         + "from the air.")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
@@ -87,6 +109,14 @@ struct DevicesView: View {
             .onAppear {
                 central.startScan()
                 self.refresh()
+                self.readPage()
+                // A second and a bit, which is the page's own repaint interval for the
+                // same two rows. Fast enough that a wrap dropping is news rather than
+                // history, and slow enough to be a string of JSON.
+                self.ticker?.invalidate()
+                self.ticker = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { _ in
+                    self.readPage()
+                }
             }
             .onDisappear {
                 // Not while an update is running: the scan was stopped by the updater
@@ -94,6 +124,8 @@ struct DevicesView: View {
                 // in onAppear was not, so the pair of them stay symmetrical and both
                 // leave the radio alone. See WrapCentral.takeRadio.
                 if !central.updating { central.stopScan() }
+                self.ticker?.invalidate()
+                self.ticker = nil
             }
             .alert("Forget this wrap?",
                    isPresented: Binding(get: { forgetting != nil },
@@ -113,6 +145,174 @@ struct DevicesView: View {
             }
         }
     }
+
+    // MARK: - the connection page
+
+    /// One row per hand, one button, and a sentence when a press came to nothing.
+    ///
+    /// A pair and not a device list. The wraps are sold in twos, one per hand, and the
+    /// thing a pilot wants to know before a drill is whether both hands are up: a list
+    /// of radios sorted by strength answers that only if you already know which of two
+    /// identical black wraps is which, and the wraps themselves know, so the rows are
+    /// left and right and the matching is the page's job.
+    @ViewBuilder private func wraps() -> some View {
+        Section {
+            if let page = page, page.canPair, page.activated {
+                ForEach(PageControl.Side.allCases) { side in
+                    hand(side, page)
+                }
+                Button(searchLabel) { search() }
+                    .font(.footnote)
+                    .disabled(searching || busy != nil || page.running)
+
+                Text(searchNote)
+                    .font(.caption).foregroundColor(.secondary)
+                if !note.isEmpty {
+                    Text(note).font(.caption).foregroundColor(.impktRed)
+                }
+            } else {
+                Text(waiting)
+                    .font(.footnote).foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Your wraps")
+        }
+    }
+
+    private var searchLabel: String {
+        searching ? "Looking for your wraps" : "Look for my wraps"
+    }
+
+    private var searchNote: String {
+        if page?.running == true {
+            return "A drill is running on the Test tab. Connecting or dropping a wrap now "
+                 + "would cost that recording its second half, so this waits until the "
+                 + "drill is finished."
+        }
+        return "A wrap sleeps until it is shaken. Shake both, press the button, and the "
+             + "ones that say which hand they are on connect themselves. This is the same "
+             + "connection the Test tab uses: there is one, and it is held by the page."
+    }
+
+    private func hand(_ side: PageControl.Side, _ page: PageControl.State) -> some View {
+        let h = side == .left ? page.left : page.right
+        return HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(side.word)
+                Text(line(for: h)).font(.caption).foregroundColor(.secondary)
+            }
+            Spacer(minLength: 12)
+            if busy == side {
+                ProgressView()
+            } else {
+                Button(h.on ? "Disconnect" : "Connect") { press(side, connected: h.on) }
+                    .font(.footnote)
+                    .disabled(busy != nil || searching || page.running)
+            }
+        }
+        .font(.footnote)
+    }
+
+    /// The page's own line for this hand, with the two live numbers after it. Both come
+    /// off the link rather than out of the air, which is the only place they exist once
+    /// a wrap has stopped advertising.
+    private func line(for h: PageControl.Hand) -> String {
+        guard h.on else {
+            return h.status.isEmpty ? "Not connected" : h.status
+        }
+        var parts = [h.status.isEmpty ? "Connected" : h.status]
+        if !h.battery.isEmpty { parts.append("battery \(h.battery)") }
+        if let rssi = h.rssi, rssi > -127 { parts.append("signal \(strength(rssi).lowercased())") }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Why there are no rows. Four answers, each wanting something different done about
+    /// it, so none of them is allowed to look like one empty list.
+    private var waiting: String {
+        guard let page = page else {
+            return asked
+                ? "The Test tab has not finished loading, so there is nothing to ask yet. "
+                  + "Open it once and come back."
+                : "Reading the page."
+        }
+        if !page.activated {
+            return "Enter your code on the Test tab first. Until the page is past its "
+                 + "front door there is no pilot for a wrap to be recording for, and "
+                 + "connecting one would record into nothing."
+        }
+        return "This build of the page cannot pair. Bluetooth belongs to the app and the "
+             + "page reaches it through the app, so this means the two are out of step: "
+             + "reinstalling is the fix."
+    }
+
+    private func press(_ side: PageControl.Side, connected: Bool) {
+        note = ""
+        busy = side
+        if connected {
+            PageControl.disconnect(side) { _ in
+                self.busy = nil
+                self.readPage()
+            }
+            return
+        }
+        PageControl.connect(side) { result in
+            self.busy = nil
+            self.readPage()
+            self.note = result.ok ? "" : self.sentence(for: result.why, side: side)
+        }
+    }
+
+    private func search() {
+        note = ""
+        searching = true
+        PageControl.search { result in
+            self.searching = false
+            self.readPage()
+            self.refresh()
+            // The page's search and this screen's list are the same radio, and the page
+            // stops the scan when it is finished with it. Started again here so the
+            // Nearby list below carries on filling in.
+            if !self.central.updating { self.central.startScan() }
+            if !result.ok { self.note = self.sentence(for: result.why, side: nil) }
+        }
+    }
+
+    /// The page answers with a reason and this screen decides what it means here, which
+    /// is not what it means on the page: "none found" from the panel sends a pilot to
+    /// the fitting step, and from a screen that is a list of what is nearby the useful
+    /// thing to say is what that list already shows.
+    private func sentence(for why: String?, side: PageControl.Side?) -> String {
+        switch why {
+        case "none found":
+            let hand = side?.word.lowercased() ?? "either hand"
+            return central.found.isEmpty
+                ? "Nothing answered for your \(hand). The wraps sleep until they are "
+                  + "shaken, so shake them and press Look for my wraps."
+                : "Nothing free for your \(hand). There is a wrap nearby, and it is "
+                  + "either already on the other hand or it says it belongs there."
+        case "refused":
+            return "It was there and would not connect. Shake it, wait a moment, and "
+                 + "press Connect again. A wrap that has just been updated wants one."
+        case "a drill is running":
+            return "A drill is running on the Test tab, so the radio is busy recording it."
+        case "no bluetooth":
+            return "The page cannot reach Bluetooth. Check it is on for IMPKT in Settings."
+        case "no page", "no answer", "the page did not answer":
+            return "The Test tab has not finished loading, so there was nothing to ask. "
+                 + "Open it once and come back."
+        default:
+            return "That did not work. The page says: \(why ?? "nothing")."
+        }
+    }
+
+    private func readPage() {
+        PageControl.state { state in
+            if let state = state { self.page = state }
+            self.asked = true
+        }
+    }
+
+    // MARK: - the lists
 
     /// Remembered wraps that are not in the list above, so nothing is listed twice and
     /// the second section is only ever the ones that are not here.
