@@ -108,7 +108,7 @@ enum PageStorage {
     /// Two keys and not four. The outbox holds finished drills that have not reached us
     /// yet, and those are somebody's session rather than a setting. The hand memo is
     /// the wraps' own left and right, read off the boards themselves, so clearing it
-    /// would only mean walking the fitting screen again for nothing.
+    /// would only mean picking a hand for each wrap again for nothing.
     static func clearProfile(then done: @escaping (Bool) -> Void) {
         guard let page = page else { done(false); return }
         let script = """

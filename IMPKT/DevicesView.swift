@@ -158,6 +158,7 @@ struct DevicesView: View {
     @ViewBuilder private func wraps() -> some View {
         Section {
             if let page = page, page.canPair, page.activated {
+                Text(wearing).font(.caption).foregroundColor(.secondary)
                 ForEach(PageControl.Side.allCases) { side in
                     hand(side, page)
                 }
@@ -181,6 +182,26 @@ struct DevicesView: View {
 
     private var searchLabel: String {
         searching ? "Looking for your wraps" : "Look for my wraps"
+    }
+
+    /// Which way round a wrap goes on, and what happens if it goes on the other way.
+    ///
+    /// Here because it is now the only place in the app that says it. The Test tab
+    /// used to ask it as four steps between the profile and the drills and those
+    /// steps are gone; the panel on that tab that says it in one line is hidden in
+    /// the app, because this screen is the native version of that panel. So the
+    /// fact moved with the panel rather than going out with the steps.
+    ///
+    /// It is worth its own paragraph and not a clause because of the second half.
+    /// A wrap on the back of the wrist connects, records, counts and scores, and
+    /// every punch in it arrives rotated: there is no screen in this app that can
+    /// show a pilot that, which is exactly why it has to be written on one.
+    private var wearing: String {
+        "The hard part of each wrap goes against the inside of your wrist, the palm "
+        + "side, just behind the heel of your hand, and the wrap winds over the top "
+        + "of it. On the back of the wrist it still connects and still scores, and "
+        + "every punch arrives rotated. Nothing on this screen can tell you that "
+        + "has happened, which is why it is on it."
     }
 
     private var searchNote: String {
@@ -278,9 +299,9 @@ struct DevicesView: View {
     }
 
     /// The page answers with a reason and this screen decides what it means here, which
-    /// is not what it means on the page: "none found" from the panel sends a pilot to
-    /// the fitting step, and from a screen that is a list of what is nearby the useful
-    /// thing to say is what that list already shows.
+    /// is not what it means on the page: "none found" in the panel is answered by the
+    /// panel's own list of what is already known, and on a screen that is a list of
+    /// what is nearby the useful thing to say is what that list shows.
     private func sentence(for why: String?, side: PageControl.Side?) -> String {
         switch why {
         case "none found":

@@ -52,6 +52,14 @@
        cards with a 1px #d2d2d7 hairline at an 8px radius, no shadows anywhere,
        and SF for the type. It was liquid glass over three blurred colour fields,
        which is what the app's own Update tab is not.
+
+       Two exceptions to that, both asked for and both deliberate. The pilot's
+       name keeps its amber-to-crimson ramp, because the name is the one thing on
+       this domain that is not furniture. And the drills screen is liquid glass
+       with G2 corners: it is the screen the app opens on and the only one with
+       anything to press, so the objects you act on are lit and the screens you
+       only read stay printed. Neither of them is a licence to put glass or a
+       radius above 8px anywhere else. See THE DRILLS ARE GLASS.
        ══════════════════════════════════════════════════════════ */
 
     /* ── THE SURFACES ───────────────────────────────────────────
@@ -62,9 +70,11 @@
        of one app disagreeing about whether surfaces are glass or paper reads as
        two apps.
 
-       The token names are kept even though nothing here is glass any more. They
+       The token names are kept even though only one screen is glass now. They
        are used in about forty places and renaming them would turn a look into a
-       refactor, which is a worse diff to read and a worse one to revert.
+       refactor, which is a worse diff to read and a worse one to revert. The
+       drills screen puts the glass back on top of these rather than through
+       them, because the tokens are what the other three screens are made of.
 
        Flatness is the whole system: hierarchy comes from the canvas shifting
        (#f5f5f7 page, white card) and from 1px hairlines, never from elevation.
@@ -158,18 +168,22 @@
     .btn-plain:active { transform: scale(0.965); }
 
     /* ── THE BACKGROUND ─────────────────────────────────────── */
-    /* There isn't one. The canvas is a flat #f5f5f7 and that is the entire
-       background layer.
+    /* Almost none. The canvas is a flat #f5f5f7 for every screen but one.
 
        What was here: a directional wash lifted from the home page's hero, faint
        horizontal rules every 112px, a blurred crimson bloom behind the pilot's
        name, and three wide colour fields at the edges of the window for the
-       panel blur to refract. All four are gone. They were built to give glass
-       something to pick up, and with flat surfaces there is nothing to refract,
-       so they stopped being depth and became pattern on a page that is supposed
-       to read as paper.
+       panel blur to refract. The first three are gone. They were built to give
+       glass something to pick up, and over flat surfaces there is nothing to
+       refract, so they stopped being depth and became pattern on a page that is
+       supposed to read as paper.
 
-       The three elements are still in the markup and are turned off here rather
+       The colour fields came back with the glass on the drills screen, and only
+       there: see body.room further down, which is set while that pane is the
+       one showing. Off here is still the default, because three of the four
+       screens on this page are paper.
+
+       The elements are all still in the markup and are turned off here rather
        than deleted, because they are also in the website copy of this page and a
        one-line revert is worth more than a tidy DOM. */
     .depth, .bloom, .ambient { display: none; }
@@ -307,7 +321,8 @@
       line-height: 1.35;
       transform: translate(-50%, -50%);
       transform-origin: 50% 50%;
-      color: var(--carbon);
+      /* Flat, and only ever seen if the clip below is unavailable. */
+      color: var(--red-deep);
       opacity: 0; pointer-events: none;
     }
     .name.lit { opacity: 1; }
@@ -353,18 +368,31 @@
        is real text in an <h1> and a <title> for anything not reading it by eye,
        and a user who has asked for more contrast gets the flat deep red below
        instead. */
-    /* Solid carbon, no clipped gradient. What was here: a five-stop amber to
-       crimson ramp painted per letter and reassembled across the word, with the
-       offset arithmetic that needed. It was the most decorative thing on the
-       domain, and the spec it now follows puts display type in one ink and keeps
-       colour for the thing you press. Deleting it also takes paintRamp()'s two
-       custom properties out of the visual contract; the function still runs and
-       now sets properties nothing reads, which is harmless and stays until the
-       script is next touched.
-
-       The prefers-contrast override went with it: there is nothing left to
-       override, because the high-contrast answer and the normal one are now the
-       same solid ink. */
+    /* The ramp is back, asked for by name. It was taken out on the flat pass
+       above, on the reading that display type belongs in one ink; the pilot's
+       name is the one thing on this domain that is not furniture, and a page
+       whose whole first beat is somebody's name arriving is allowed one piece of
+       colour. Everything else on the drills screen stays as the spec has it. */
+    @supports ((background-clip: text) or (-webkit-background-clip: text)) {
+      .name .ch {
+        background-image: linear-gradient(to right,
+          #FFCE7A 0%, #FF9A4D 16%, #F4514E 44%, #D6203C 70%, #C41E3A 100%);
+        background-repeat: no-repeat;
+        /* Fallbacks matter: until paintRamp() runs, or if it ever cannot
+           measure, each letter gets the whole ramp to itself. Wrong, but wrong
+           in the direction of still being warm text rather than nothing. */
+        background-size: var(--ramp-w, 100%) 100%;
+        background-position: var(--ramp-x, 0px) 0;
+        -webkit-background-clip: text; background-clip: text;
+        color: transparent;
+      }
+    }
+    /* A gradient clipped to text is a hairline from unreadable for a user who
+       has asked for more contrast — its light end does the opposite of what
+       was asked. */
+    @media (prefers-contrast: more) {
+      .name .ch { background: none; color: var(--red-deep); }
+    }
 
     /* Per-letter arrival, and slow on purpose. The letters rise out of their
        own line and resolve out of a blur rather than fading in place: a name
@@ -376,10 +404,12 @@
       display: inline-block;
       transform: translateY(0.34em) scale(0.965);
       opacity: 0;
+      filter: blur(14px);
       transition: transform 1.15s var(--ease),
-                  opacity 0.95s var(--ease-smooth);
+                  opacity 0.95s var(--ease-smooth),
+                  filter 0.95s var(--ease-smooth);
     }
-    .name .ch.in { transform: none; opacity: 1; }
+    .name .ch.in { transform: none; opacity: 1; filter: blur(0); }
     .name .sp { display: inline-block; width: 0.26em; }
 
     /* On a phone the name is set on two lines, the given name over the rest, and
@@ -423,11 +453,21 @@
       letter-spacing: -0.032em;
       line-height: 1.35;   /* matches .name, see the note there */
       white-space: nowrap;
-      /* The same ink as the flying copy, so the cross-fade at the landing is
-         between two identically painted things. */
-      color: var(--carbon);
+      /* The same five stops the flying copy carries, so the cross-fade at the
+         landing is between two identically painted things. See the long note on
+         .name .ch. No offset arithmetic needed here: this is one element with
+         one text node in it, so `to right` already spans the whole word, and by
+         the landing the flying copy has been scaled to this element's width.
+         Same word, same proportions, same colour at every letter. */
+      background: linear-gradient(to right,
+        #FFCE7A 0%, #FF9A4D 16%, #F4514E 44%, #D6203C 70%, #C41E3A 100%);
+      -webkit-background-clip: text; background-clip: text;
+      color: transparent;
       opacity: 0;
       transition: opacity 0.14s linear, font-size 0.5s var(--ease);
+    }
+    @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+      .name-title { background: none; color: var(--red-deep); }
     }
     /* The name comes down once there is work under it. It lands at display size
        because the landing is the moment the page is about; from there on it is a
@@ -500,7 +540,7 @@
        every pane that scrolls or can outgrow its box goes back to top-aligned.
        The programme is always taller than the window; the profile and the
        briefing only are below the heights measured in the queries further down. */
-    #drills, #run, #fit { justify-content: flex-start; }
+    #drills, #run { justify-content: flex-start; }
     .pane-h {
       margin-top: 8px;
       font-size: clamp(24px, 3vw, 32px); font-weight: 600;
@@ -661,7 +701,7 @@
        overscroll-behavior so a flick at the end of the list does not rubber-band
        the window behind it, and scrollbar-gutter so the column does not shift
        sideways by the width of a scrollbar when one appears. */
-    #drills, #setup, #run, #fit {
+    #drills, #setup, #run {
       overflow-y: auto; overscroll-behavior: contain;
       scrollbar-gutter: stable both-edges;
     }
@@ -893,104 +933,17 @@
       color: var(--ash);
     }
 
-    /* ── BEAT 6 — THE FITTING ───────────────────────────────────
-       Four steps between the profile and the programme: out of the box, wake
-       them, put them on, find them. It is a walkthrough rather than a page of
-       instructions because every one of the four is a thing done with your
-       hands, in order, and the third one has a wrong way that looks right.
-
-       The rail on the left is the whole sequence at once, so it is always
-       obvious how many steps are left. The step itself is one diagram, two
-       sentences and one button, which is as much as anybody reads with a wrap
-       half on. */
-    .fit {
-      display: grid; grid-template-columns: minmax(190px, 26%) minmax(0, 1fr);
-      gap: 18px; align-items: start;
-      width: 100%; max-width: 1000px;
-      margin-top: clamp(12px, 2vh, 24px);
-      text-align: left;
-    }
-    .fit-steps { list-style: none; padding: 16px 14px; }
-    .fit-step {
-      display: grid; grid-template-columns: 22px minmax(0, 1fr);
-      align-items: start; column-gap: 11px; padding: 9px 4px;
-      font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
-      color: var(--ash);
-    }
-    .fit-step + .fit-step { border-top: 1px solid rgba(10,10,12,0.07); }
-    /* The number is the state. Grey ring for later, crimson disc for now, and a
-       crimson tick for done, which is the whole progress indicator: a bar under
-       four steps says less than four numbers that have changed colour. */
-    .fit-step i {
-      width: 22px; height: 22px; border-radius: 50%;
-      display: grid; place-items: center;
-      font-style: normal; font-size: 11.5px; font-variant-numeric: tabular-nums;
-      background: var(--white); color: var(--ash);
-      box-shadow: 0 0 0 1px var(--hair);
-    }
-    .fit-step.now { color: var(--carbon); font-weight: 500; }
-    .fit-step.now i { background: var(--red); color: var(--white); box-shadow: none; }
-    .fit-step.done i { background: var(--red-deep); color: var(--white); box-shadow: none; }
-    .fit-stage { padding: 20px 22px 20px; }
-    .fit-n {
-      font-size: var(--text-caption); letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--ash);
-    }
-    .fit-h {
-      margin-top: 8px;
-      font-size: clamp(21px, 2.4vw, 27px); font-weight: 600;
-      letter-spacing: -0.018em;
-    }
-    .fit-b {
-      margin-top: 9px; max-width: 56ch;
-      font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
-      color: var(--ash);
-    }
-    .fit-b b { font-weight: 500; color: var(--carbon); }
-    /* The diagram. Wider than tall, because all four of these are an arm or a
-       pair of objects side by side, and drawn in the same two strokes as the
-       drill icons: crimson for the wrap, grey for the body it goes on. */
-    .fit-art {
-      margin-top: 14px; padding: 10px 0;
-      display: grid; place-items: center;
-      border-radius: var(--r-s); background: var(--frost);
-    }
-    /* 264 is 400 at the wear step's aspect: any taller and the width stops being
-       the limit, so the drawing would sit in the middle of its own box. */
-    .fit-art svg { width: min(100%, 400px); max-height: 264px; height: auto; display: block; }
-    .fit-art svg * {
-      fill: none; stroke: var(--red); stroke-width: 1.5;
-      stroke-linecap: round; stroke-linejoin: round;
-    }
-    .fit-art svg .g { stroke: var(--ash); stroke-width: 1.2; }
-    .fit-art svg .f { fill: var(--red); stroke: none; }
-    .fit-art svg .no { stroke: var(--pebble); stroke-width: 1.2; }
-    /* A drawing cannot say "palm side" on its own, and this is the one step where
-       being wrong is silent, so the third diagram labels the two faces of the
-       section. A few words in the caption size is cheaper than another sentence
-       of body copy nobody reads with a wrap half on. */
-    .fit-art svg text {
-      fill: var(--ash); stroke: none;
-      font-family: var(--font); font-size: 9px; letter-spacing: -0.006em;
-    }
-    .fit-art svg text.no { fill: var(--pebble); stroke: none; }
-    .fit-art svg text.k { fill: var(--red-deep); stroke: none; }
-    .fit-nav { margin-top: 16px; }
-    .fit .hub-nav { justify-content: flex-start; }
-    .fit-skip { margin-top: 6px; }
-    .fit-skip button {
-      background: none; border: none; padding: 6px 0; cursor: pointer;
-      font-family: var(--font); font-size: var(--text-caption);
-      letter-spacing: var(--tracking-caption); color: var(--ash);
-    }
-    .fit-skip button:hover { color: var(--red-deep); text-decoration: underline; }
-
     /* ── THE SEARCH ─────────────────────────────────────────────
        Our own list rather than a browser dialog with a list in it. The page
        fills it itself from every route a browser gives it, and the browser's own
        dialog sits underneath as a once-per-wrap introduction rather than as the
        interface. Either way the choosing happens here, in the page, where "which
-       hand is this one" can be asked at all. */
+       hand is this one" can be asked at all.
+
+       It used to be the fourth of four setup steps, on a screen of its own. It
+       is now inside the wraps panel on the drills screen, which is where the two
+       hands already are: finding a wrap and connecting it are one thing, and
+       they were on two screens. */
     .find-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
     .find-state {
       font-size: var(--text-caption); letter-spacing: var(--tracking-caption);
@@ -1062,6 +1015,22 @@
     .find-grant-note { border-top: none; padding-top: 0; }
     #find-grant-box { margin-top: 10px; }
     #find-grant-box .btn-plain { margin-top: 10px; }
+    /* In the panel the list is in a 250px column, so an action goes under the
+       name rather than beside it: "Left hand" and "Right hand" next to a name and
+       a strength is four things in 250px and the name is the one that loses.
+       Only in the two-column layout, because under 1040px the panel is the whole
+       width of the screen and the row fits across it. */
+    @media (min-width: 1041px) {
+      /* Both classes, because this is one button: renderFound swaps it between
+         the filled and the outlined pill as there stops being anything to search
+         for, and a button that changes size when it changes colour reads as two
+         buttons in the same place. */
+      .find-top .btn-glass, .find-top .btn-plain {
+        min-height: 40px; padding: 0 20px; font-size: var(--text-body-sm);
+      }
+      .fnd { grid-template-columns: 22px minmax(0, 1fr); row-gap: 8px; }
+      .fnd-pick, .fnd-has { grid-column: 2; }
+    }
     /* Four bars. The only honest reading of strength Web Bluetooth gives a page
        is the RSSI on an advertisement, so the bars are drawn from that and they
        go flat rather than lying when no advertisement has arrived. */
@@ -1075,16 +1044,16 @@
     .sig i:nth-child(3) { height: 11px; }
     .sig i:nth-child(4) { height: 15px; }
     .sig i.on { background: var(--red); }
-    @media (max-width: 900px) {
-      .fit { grid-template-columns: 1fr; max-width: 620px; }
-    }
 
     /* ── BEAT 7 — THE PROGRAMME ─────────────────────────────── */
     /* Two columns: the wraps down the left at about 30% of the width, and the
        six drills as cards. The device panel is on this screen rather than on
        one of its own because being connected is not a step with a start and an
        end. It is a thing that is either true or not while you are looking at
-       the drills, and it belongs beside them where it can say so. */
+       the drills, and it belongs beside them where it can say so.
+
+       One column in the app, where the panel is hidden and the Devices tab is
+       the panel: see the in-app rules at the end of this stylesheet. */
     .prog {
       display: grid; grid-template-columns: minmax(250px, 30%) minmax(0, 1fr);
       gap: 18px; align-items: start;
@@ -1206,6 +1175,155 @@
       .dcard-when { text-align: center; }
     }
 
+    /* ── THE DRILLS ARE GLASS ───────────────────────────────────
+       Asked for by name: the drills screen is liquid glass with G2 corners, and
+       it is the only screen on this page that is. The rest of the file stays on
+       .claude/APPLE-DESIGN.md, flat white cards on a frost canvas at an 8px
+       radius, which is what the app's Update tab is.
+
+       Two screens in two languages is usually the wrong answer and here it is
+       the point. The drills screen is the one the app opens on and the only one
+       with anything to press; everything before it is reading. So the objects
+       you act on are the objects that are lit, and the objects that are only
+       text stay printed into the page.
+
+       Four parts, and all four are needed or none of them read:
+
+         The fill is translucent, not white, so there is something to see
+         through. A backdrop blur over an opaque surface is a blur of nothing.
+
+         backdrop-filter blurs and lifts the saturation of whatever is behind,
+         which is the ambient field below. saturate above 1 is what stops the
+         blur reading as frosted plastic: glass concentrates colour, ground
+         glass washes it out.
+
+         A gradient over the top of the blur, light at the top edge and less so
+         at the bottom, which is the sheen. It has to be a background-image
+         rather than a pseudo-element: backdrop-filter paints behind the
+         element's own background, so a gradient in the background sits on the
+         blur by construction.
+
+         An inset hairline along the top edge, which is the specular. One line,
+         white, one pixel, and it follows the corner shape for free because an
+         inset shadow is clipped by the border box.
+
+       No drop shadow on any of it. The spec's one real rule that survives here
+       is that elevation is not how this page shows hierarchy, and a glass panel
+       casting a shadow onto paper is two lighting models in one screen. */
+    #drills .glass {
+      /* Half of a white, which on the frost canvas is a surface and not a
+         window: at 0.3 the type on top of it stops being black on white. */
+      background-color: rgba(255,255,255,0.56);
+      background-image: linear-gradient(180deg,
+        rgba(255,255,255,0.46) 0%,
+        rgba(255,255,255,0.10) 42%,
+        rgba(255,255,255,0.00) 100%);
+      border-color: rgba(255,255,255,0.58);
+      /* 20px and not the 26 this page used to run at. Every one of these is a
+         live blur inside a container that scrolls, eight of them on the drills
+         screen, and the blur is re-sampled per frame while a thumb is moving:
+         the radius is the one term in that cost worth spending less on, and at
+         20px over a 90px-blurred field nothing is sharper for it. */
+      -webkit-backdrop-filter: blur(20px) saturate(1.7);
+      backdrop-filter: blur(20px) saturate(1.7);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    /* Not while the screen is arriving or leaving, which costs nothing and saves
+       a measurable amount.
+
+       The reason it costs nothing is worth writing down. pane-in and pane-out
+       animate opacity, and an element with an opacity below 1 is a backdrop root:
+       everything inside it samples the pane's own empty backdrop rather than the
+       page behind it. So for the half second the screen is moving, eight live
+       blurs are each blurring transparent black and putting nothing on screen.
+       Turning them off for exactly that long removes work and changes no pixel.
+
+       It is measurable: on a software-rendered web view the drills pane took
+       long enough to finish pane-out with the blurs running that a probe reading
+       600ms after the press found the screen still leaving. */
+    #drills.entering .glass, #drills.leaving .glass {
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+    }
+
+    /* G2 corners. corner-shape is the whole reason this is one line rather than
+       a clip-path: a superellipse in clip-path has to be recomputed at every
+       width, and it takes the border and the inset highlight with it.
+
+       The radii go up with it, because a squircle is the flatter curve of the
+       two and 8px of it is indistinguishable from a square corner. No @supports
+       around it and none needed: a declaration a browser does not know is
+       dropped at parse time, so an older one keeps the border-radius and gets
+       the same card with ordinary round corners. */
+    #drills .glass, #drills .dcard-ico, #drills .drill-lock {
+      corner-shape: squircle;
+    }
+    #drills .dcard { border-radius: 22px; }
+    #drills .connect { border-radius: 26px; }
+    #drills .drill-lock { border-radius: 16px; }
+    /* The diagram tile. Kept opaque white: it is a 46px box holding a 28px line
+       drawing, and a blur behind two hairline strokes takes the strokes' own
+       contrast with it. The card it sits on is the glass; this is an object on
+       the glass.
+
+       No hairline round it. Opaque white against a card that is 56% white is
+       already a bright step, and the grey hairline the flat version used is the
+       one borrowed thing that reads as a sticker on top of glass rather than as
+       part of it. */
+    #drills .dcard-ico {
+      border-radius: 14px;
+      background: var(--white);
+      box-shadow: none;
+    }
+    @media (max-width: 620px) {
+      /* The card is about 170px wide here and a 22px corner on a 170px box is a
+         lozenge. The shape stays, the radius comes down to match the box. */
+      #drills .dcard { border-radius: 16px; }
+      #drills .dcard-ico { border-radius: 12px; }
+    }
+    /* What the glass refracts, and the reason it is on this screen only.
+       Three wide, heavily blurred colour fields at the edges of the window: one
+       crimson, one cool, one warm. On their own they are all but invisible,
+       which is the intention. They exist so that a blur has something other
+       than flat frost to pick up, and so that scrolling the drills changes what
+       is behind them.
+
+       Fixed and at the edges rather than in the middle, so nothing ever passes
+       behind body text and lifts a warm cast into it.
+
+       body.room is set by show() when the drills pane arrives and cleared when
+       it leaves, so the briefing and the profile are still on a plain canvas and
+       a drill running full-screen is not on top of three colour fields. */
+    body.room .ambient { display: block; }
+    .ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .ambient i { position: absolute; display: block; border-radius: 50%; filter: blur(90px); }
+    .ambient i:nth-child(1) {
+      width: 44vw; height: 44vw; left: -14vw; top: -10vw;
+      background: rgba(196,30,58,0.15);
+    }
+    .ambient i:nth-child(2) {
+      width: 50vw; height: 50vw; right: -18vw; top: 26vh;
+      background: rgba(120,130,170,0.17);
+    }
+    .ambient i:nth-child(3) {
+      width: 38vw; height: 38vw; left: 8vw; bottom: -16vw;
+      background: rgba(255,176,88,0.14);
+    }
+    /* Both of the ways a reader can say no to this. Reduced transparency is the
+       iOS accessibility setting and it means exactly what is being asked here,
+       so the cards go back to the flat white the rest of the page is; increased
+       contrast takes the fields away too, since a colour field behind small
+       grey type is the thing that setting exists to stop. */
+    @media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+      body.room .ambient { display: none; }
+      #drills .glass {
+        background-color: var(--white); background-image: none;
+        border-color: var(--hair);
+        -webkit-backdrop-filter: none; backdrop-filter: none;
+        box-shadow: none;
+      }
+      #drills .dcard-ico { background: var(--white); box-shadow: 0 0 0 1px var(--hair); }
+    }
+
     /* ── NO WRAP, NO DRILL ──────────────────────────────────────
        A drill run with nothing on your wrists records nothing, and the pilot
        finds that out twelve minutes later. So the cards go back and stop being
@@ -1268,7 +1386,11 @@
     .wrap .sig i:nth-child(3) { height: 10px; }
     .wrap .sig i:nth-child(4) { height: 13px; }
     .wrap-btn { margin-top: 10px; }
-    .connect .btn-plain { margin-top: 14px; width: 100%; min-height: 40px; font-size: var(--text-body-sm); }
+    /* The one secondary button in the panel, which is the browser's own
+       introduction dialog. Full width and shorter than the standard pill,
+       because the panel column is 250px and a 52px pill the width of its label
+       is a second primary action in a panel that already has one. */
+    #find-grant { margin-top: 14px; width: 100%; min-height: 40px; font-size: var(--text-body-sm); }
     /* The light. Grey for nothing, crimson for connected, and it breathes while
        the browser's chooser is open so that a scan does not look like a hang. */
     .wrap-dot {
@@ -1715,6 +1837,31 @@
        page served at impktband.com from this same file. */
     html.in-app .eyebrow { display: none; }
     html.in-app .kb { display: none; }
+
+    /* The Test tab is the drills and nothing else, which is what was asked for.
+       Two things come off it here and both are things the app says better
+       somewhere else.
+
+       The wraps panel, because the app has a Devices tab that is exactly this:
+       one row per hand, the same readings, and one button that goes looking. It
+       is not a second implementation either, it asks this page to do the work,
+       so on a phone the panel is the same two hands said twice. On the website
+       it is the only way to connect a wrap, which is why it is hidden here
+       rather than deleted from the file. The lock note picks its own half of the
+       sentence to match: see paintDrillLock.
+
+       The privacy paragraph, because it is the Profile tab's "What leaves this
+       phone" section word for word, and a phone has a tab called Profile to put
+       it on. It stays on the website, which has nowhere else for it.
+
+       With the panel gone the grid has one column and the drills take the
+       width, capped rather than let loose: the cards are two across at any
+       width, and 580px of card around a 46px diagram and two lines of text is a
+       card that has stopped being a card. */
+    html.in-app .connect { display: none; }
+    html.in-app #drills .setup-note { display: none; }
+    html.in-app .prog { grid-template-columns: minmax(0, 1fr); max-width: 820px; }
+    html.in-app .prog-main { grid-column: 1; grid-row: 1; }
   </style>
 </head>
 <body>
@@ -1946,63 +2093,6 @@
         <button class="btn-plain" type="button" id="back-to-brief">Back</button>
       </div>
     </section>
-    <!-- ── THE FITTING ─────────────────────────────────────────────
-         Between the profile and the programme, because a pair of wraps that are
-         on the wrong side of the wrist produce twelve minutes of data that looks
-         fine and is not. Four steps: out of the box, wake them, put them on,
-         find them. The fourth is the only one with any machinery behind it, and
-         it is deliberately the last: nothing is searched for until both wraps
-         are awake and on, so a wrap that cannot be found is a wrap that is
-         actually not there rather than one that is still asleep in the box. -->
-    <section class="pane" id="fit" tabindex="-1" hidden aria-label="Set your wraps up">
-      <div class="fit">
-        <ol class="glass fit-steps" id="fit-steps"></ol>
-
-        <div class="glass fit-stage">
-          <span class="fit-n" id="fit-n"></span>
-          <h2 class="fit-h" id="fit-h"></h2>
-          <p class="fit-b" id="fit-b"></p>
-          <div class="fit-art" id="fit-art" aria-hidden="true"></div>
-
-          <!-- The search. Our own list, filled by whatever the browser will let
-               this page use: the wraps it has already been given permission to
-               talk to, a live listen on each of those, and a real scan where
-               scanning is switched on. From firmware v2.3 a wrap says which
-               hand it is on in its own name, so this list is usually empty and
-               already finished: both wraps come up connected. A wrap that has
-               never been told still becomes a left or a right here, in the
-               page, because that is a question no browser dialog asks. -->
-          <div id="fit-find" hidden>
-            <div class="find-top">
-              <button class="btn-glass" type="button" id="find-go">Search for your wraps</button>
-              <span class="find-state" id="find-state">Not searching yet</span>
-            </div>
-            <ul class="found" id="found"></ul>
-            <p class="find-note" id="find-note"></p>
-            <!-- The one thing the page cannot do for itself. Chrome will not let
-                 a page see a Bluetooth device it has never been given permission
-                 for, and that first permission is granted in a dialog Chrome
-                 draws. So it is a separate, secondary, plainly labelled action
-                 rather than something that happens when Connect is pressed, it
-                 is offered only once the in-page search has come up empty, and
-                 the two ways to never see it again are in the note above it. -->
-            <div id="find-grant-box" hidden>
-              <p class="find-note find-grant-note" id="find-grant-note"></p>
-              <button class="btn-plain" type="button" id="find-grant">Let the browser
-                introduce one wrap</button>
-            </div>
-          </div>
-
-          <div class="hub-nav fit-nav">
-            <button class="btn-glass" type="button" id="fit-next">Next</button>
-            <button class="btn-plain" type="button" id="fit-back">Back</button>
-          </div>
-          <p class="fit-skip">
-            <button type="button" id="fit-skip">Skip this and go to the drills</button>
-          </p>
-        </div>
-      </div>
-    </section>
 
     <!-- ── THE PROGRAMME ───────────────────────────────────────────
          Six drills, twelve minutes each, and they are not a training plan. They
@@ -2039,15 +2129,15 @@
     <section class="pane" id="drills" tabindex="-1" hidden aria-label="Your drills">
       <div class="prog">
         <div class="prog-main">
-          <h2 class="prog-h">Your programme.</h2>
-          <p class="prog-b">
-            One minute to test the whole thing works, then six drills of twelve
-            minutes, one per session, in order, at the start while you are fresh.
-            They are not a training plan. They are how the wraps learn to tell
-            your punches apart. If you throw the wrong punch or lose the tempo,
-            carry on rather than starting again: five mislabelled seconds cost us
-            nothing and a restarted drill costs twelve minutes.
-          </p>
+          <!-- No heading and no standfirst. There was a "Your programme." over a
+               paragraph explaining what the seven cards are for, and the cards
+               say it: each one carries its own title, where it is done and how
+               long it takes. The pilot's name is already the heading of this
+               screen, and a screen asked to be the drills and nothing else does
+               not open with two paragraphs about them. The one thing in that copy
+               that is not said anywhere else, that a rep thrown wrong is not
+               worth restarting twelve minutes for, moved to the drill's own ready
+               screen: see openRun. -->
 
           <!-- Above the cards, not inside them: it is one fact about all seven,
                and it is the reason they are greyed out, which has to be readable
@@ -2081,7 +2171,18 @@
              explains the other three when they stop moving, and it is honest
              about where it comes from: RSSI off an advertisement is the only
              strength a page is given, so when no advertisement has arrived the
-             bars go flat and the row says why instead of inventing a number. -->
+             bars go flat and the row says why instead of inventing a number.
+
+             The search is in here now, under the two hands, where it used to be
+             the last of four setup steps on a screen of its own. Finding a wrap
+             and connecting it were never two jobs.
+
+             Not shown in the app at all: see the in-app rules in the stylesheet.
+             The app has a Devices tab that does this natively and asks this page
+             to do the work, so on a phone this panel is the same two hands said
+             twice. On the website it is the only way to connect, which is why it
+             is hidden there rather than deleted. -->
+
         <aside class="glass connect" id="connect" aria-label="Your wraps">
           <h2 class="connect-h">Your wraps</h2>
           <p class="connect-b">One per hand, on the inside of each wrist.</p>
@@ -2119,9 +2220,39 @@
               <button class="wrap-btn" type="button" data-side="right">Connect</button>
             </li>
           </ul>
+
+          <!-- The search, which used to be a screen of its own. Our own list,
+               filled by whatever the browser will let this page use: the wraps it
+               has already been given permission to talk to, a live listen on each
+               of those, and a real scan where scanning is switched on. From
+               firmware v2.3 a wrap says which hand it is on in its own name, so
+               this list is usually empty and already finished: both wraps come up
+               connected. A wrap that has never been told still becomes a left or
+               a right here, in the page, because that is a question no browser
+               dialog asks. -->
+          <div class="find" id="find-box">
+            <div class="find-top">
+              <button class="btn-glass" type="button" id="find-go">Search for your wraps</button>
+              <span class="find-state" id="find-state">Not searching yet</span>
+            </div>
+            <ul class="found" id="found"></ul>
+            <p class="find-note" id="find-note"></p>
+            <!-- The one thing the page cannot do for itself. Chrome will not let
+                 a page see a Bluetooth device it has never been given permission
+                 for, and that first permission is granted in a dialog Chrome
+                 draws. So it is a separate, secondary, plainly labelled action
+                 rather than something that happens when Connect is pressed, it
+                 is offered only once the in-page search has come up empty, and
+                 the two ways to never see it again are in the note above it. -->
+            <div id="find-grant-box" hidden>
+              <p class="find-note find-grant-note" id="find-grant-note"></p>
+              <button class="btn-plain" type="button" id="find-grant">Let the browser
+                introduce one wrap</button>
+            </div>
+          </div>
+
           <p class="connect-last" id="connect-last" hidden></p>
           <p class="connect-note" id="connect-note"></p>
-          <button class="btn-plain" type="button" id="to-fit">Set the wraps up again</button>
         </aside>
       </div>
     </section>
@@ -2242,6 +2373,14 @@
   const bloom   = document.getElementById('bloom');
 
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Whether there is an app around this page. The class is put on <html> by
+     bridge.js at document start, keyed off the native message handler being
+     there, so it is on before this script runs and there is one answer to the
+     question rather than a second sniff of the user agent here. The stylesheet
+     reads the class directly; this is for the copy that has to differ, which is
+     anything naming a screen only one of the two has. */
+  const IN_APP = document.documentElement.classList.contains('in-app');
 
   /* ── 1. THE CODE ──────────────────────────────────────
      There is no backend on this domain, so nothing is "looked up".
@@ -2788,13 +2927,14 @@
     /* Read at call time rather than closed over: setup and drills are declared
        further down this script, and show is only ever called from a handler. */
     const all = [brief, document.getElementById('setup'),
-                 document.getElementById('fit'), document.getElementById('drills'),
+                 document.getElementById('drills'),
                  document.getElementById('run')];
     const from = all.find(p => p && !p.hidden);
     if (from === pane) return;
     /* A scan left running on a screen nobody is looking at is a radio left on.
-       Leaving the fitting stops it, wherever the leaving was triggered from. */
-    if (pane !== document.getElementById('fit')) stopScan();
+       The search lives in the wraps panel on the drills screen, so leaving the
+       drills stops it, wherever the leaving was triggered from. */
+    if (pane !== document.getElementById('drills')) stopScan();
 
     const arrive = () => {
       all.forEach(p => { if (p && p !== pane) p.hidden = true; });
@@ -2814,10 +2954,26 @@
          takeover's whole rule is that chrome goes, so it leaves the same way it
          leaves for the code. */
       mark.classList.toggle('away', solo);
+      /* The three colour fields behind the window, on for the one screen made of
+         glass and off for the three made of paper. A blur with nothing behind it
+         is a blur of flat frost, and a colour field behind a screen with no glass
+         on it is pattern. See THE DRILLS ARE GLASS in the stylesheet. */
+      document.body.classList.toggle('room',
+                                     pane === document.getElementById('drills'));
       fitTitle();
       /* The slider fills are measured in pixels, and a hidden slider measures
          zero, so they are laid in again the moment the pane has a width. */
       if (pane === document.getElementById('setup')) showMeasures();
+      /* The wraps panel comes up ready rather than blank: everything this browser
+         already has permission for is listed, and anything that says which hand
+         it is on is connected, before a button has been pressed. It was the
+         fitting step's arrival and it belongs to whatever screen the panel is on.
+         No scan in it, so it costs nothing on a screen nobody connects from.
+
+         Not during a drill, which is the one time the drills screen can be
+         arrived at with the radio busy: see endRun, which is what brings the
+         pilot back here. */
+      if (pane === document.getElementById('drills') && !RUN.live) findReady();
       /* Two frames, not one: the first is the frame the element becomes
          displayed in, and a class added in that same frame has no from-state to
          animate out of. */
@@ -3246,10 +3402,16 @@
     grid.inert = lock;
     note.hidden = !lock && on !== 1;
     if (lock) {
+      /* Where to go and connect, which is not the same place in the two places
+         this file runs. In the app it is the Devices tab and the panel on this
+         screen is hidden; on the website there is no Devices tab and the panel
+         is the only way. Saying both would send half the readers looking for
+         something that is not there. */
       note.textContent = 'Connect a wrap first. The drills are how the wraps '
         + 'learn your punches, so one run with nothing on your wrists is twelve '
-        + 'minutes that recorded nothing. Connect on the Devices tab, or in the '
-        + 'panel on this screen.';
+        + 'minutes that recorded nothing. ' + (IN_APP
+          ? 'Connect on the Devices tab.'
+          : 'Connect in the panel beside these drills.');
     } else if (on === 1) {
       note.textContent = 'One wrap is connected. The drill will run, and the hand '
         + 'without a wrap on it records nothing, so the pair is worth the extra '
@@ -3266,177 +3428,13 @@
     }
   });
 
-  /* ── 7. THE FITTING ───────────────────────────────────
-     Four steps between the profile and the programme. Three of them are things
-     done with your hands and the fourth is the search, and they are in that
-     order for a reason that is not politeness: nothing is searched for until
-     both wraps are awake and on a wrist, so a wrap that does not come up is a
-     wrap that is genuinely not there rather than one still asleep in the box.
-
-     The third step is the only one anybody gets wrong. The unit goes against
-     the inside of the wrist, and on the outside it still records, still scores
-     and still looks correct, while every punch arrives rotated. It gets the
-     most words and the clearest diagram because it is the failure that does
-     not announce itself. */
-  const fitPane = document.getElementById('fit');
-
-  /* The third step's diagram is a section of the wrist, looking down the forearm
-     from the hand end, with the wrap wound round it and the unit in the one
-     position this step exists to establish.
-
-     It was a drawing of a hand, twice, palm and back, and that is gone. The
-     hand cost several passes to stop reading as a mitten and it was answering a
-     question nobody asked: which face of the wrist the unit lies against is a
-     fact about a cross-section, and a hand is what you have to draw around it.
-     A section shows both faces at once, in a quarter of the strokes.
-
-     The reason the first attempt at a section failed is that an outline of a
-     wrist with turns of wrap round it reads as three rings. So the section is
-     hatched. Hatching is the drafting convention for a cut surface and it is
-     unmistakable: nothing hatched is a ring. That, and the section being a
-     flattened oval rather than a circle, which is both true of a wrist and the
-     reason the unit has a right face to be on at all.
-
-     The unit is the only crimson thing and it lies in the gap between the
-     section and the first turn, which is where it lies in life: under the wrap,
-     against the skin. The same shape sits at the top in pebble with a cross
-     through it, because on the back of the wrist everything still works and
-     every punch arrives rotated, and that is the failure the step is for. */
-  function wristArt() {
-    const box = (x, y, w, h, r, cls) =>
-      `<rect class="${cls}" x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}"/>`;
-
-    const skin = box(56, 45, 88, 54, 22, 'g');
-
-    /* 45 degrees, 9 apart, clipped by the section. The lines run well past it on
-       both sides so the clip is what ends them and the spacing stays even. */
-    const lines = [];
-    for (let k = -60; k <= 140; k += 9) lines.push(`M${k} 130L${k + 130} 0`);
-    const hatch = '<clipPath id="wsec">'
-      + '<rect x="56" y="45" width="88" height="54" rx="22"/></clipPath>'
-      + `<g clip-path="url(#wsec)"><path class="no" d="${lines.join('')}"/></g>`;
-
-    /* Two turns of the wrap, and no loose end trailing off them: at this size a
-       free end reads as a stray hair, and the hatch is already saying that the
-       thing inside these is a wrist and not a hole. */
-    const wrap = box(46, 32, 108, 80, 32, 'g') + box(42, 28, 116, 88, 36, 'g');
-
-    const unit  = box(82, 100, 36, 11, 4, 'f');
-    const ghost = box(82, 33, 36, 11, 4, 'no')
-      + '<path class="no" d="M86 36l28 5M114 36l-28 5"/>';
-
-    return hatch + skin + wrap + ghost + unit
-      + '<text class="no" x="100" y="22" text-anchor="middle">Back of the wrist</text>'
-      + '<text class="k" x="100" y="128" text-anchor="middle">'
-      + 'Palm side, the inside of your wrist</text>';
-  }
-
-  /* One diagram per step, 200x92, same two strokes as the drill icons: crimson
-     is the wrap, grey is the thing it goes in or on, and pebble crossed through
-     is the way that looks right and is not. */
-  const ART = {
-    /* The box, the pair inside it, the pair out of it. */
-    box: '<rect class="g" x="16" y="30" width="76" height="50" rx="7"/>'
-       + '<path class="g" d="M16 43h76"/>'
-       + '<rect x="30" y="52" width="20" height="20" rx="6"/>'
-       + '<rect x="58" y="52" width="20" height="20" rx="6"/>'
-       + '<path class="g" d="M104 55h24"/><path class="g" d="M122 49l6 6-6 6"/>'
-       + '<rect x="140" y="45" width="22" height="22" rx="7"/>'
-       + '<rect x="166" y="45" width="22" height="22" rx="7"/>',
-    /* One wrap, shaken side to side, advertising. */
-    wake: '<rect x="86" y="40" width="28" height="30" rx="9"/>'
-        + '<path class="g" d="M72 55H56"/><path class="g" d="M62 49l-6 6 6 6"/>'
-        + '<path class="g" d="M128 55h16"/><path class="g" d="M138 49l6 6-6 6"/>'
-        + '<path d="M92 32a14 14 0 0 1 16 0"/><path d="M86 22a26 26 0 0 1 28 0"/>',
-    /* The step is a choice between two positions, so the diagram is both of them
-       at once: one section, the right position on the palm side and the wrong one
-       crossed out on the back. */
-    wear: wristArt(),
-    /* The page, a list in it, a wrap talking to it. */
-    find: '<rect class="g" x="18" y="24" width="88" height="56" rx="8"/>'
-        + '<path class="g" d="M32 42h48M32 54h60M32 66h34"/>'
-        + '<rect x="152" y="41" width="24" height="26" rx="8"/>'
-        + '<path d="M140 45a14 14 0 0 0 0 18"/><path d="M130 39a24 24 0 0 0 0 30"/>'
-  };
-
-  const STEPS = [
-    { k: 'box', rail: 'Out of the box',
-      h: 'Take both wraps out.',
-      b: 'Two of them, one per hand, and they are not interchangeable: each one '
-       + 'already knows which hand it belongs to and says so, L on the left and '
-       + 'R on the right. Put them on that way round and the last of these four '
-       + 'steps does itself. An older wrap that has never been told is plain, '
-       + 'and then it is you who says which hand it is on, at the end.' },
-    { k: 'wake', rail: 'Shake to wake',
-      h: 'Shake each one awake.',
-      b: 'A wrap sleeps when it is put down, and it wakes on movement. Pick one '
-       + 'up and shake it once, firmly, the way you would shake water off your '
-       + 'hand. Then the other. You do not have to check that it worked: a wrap '
-       + 'that is awake is one that comes up in the search on the last step, and '
-       + 'one that does not come up gets shaken again.' },
-    { k: 'wear', rail: 'Inside the wrist', vb: '0 0 200 132',
-      h: 'The unit goes against the inside of your wrist.',
-      b: 'This is the step to get right. The hard part of the wrap sits on the '
-       + 'inside of your wrist, the palm side, just behind the heel of your hand. '
-       + 'Then wrap over the top of it as you normally would, firm enough that it '
-       + 'cannot turn while you are throwing. <b>On the back of the wrist it will '
-       + 'still record and still score, and every punch will arrive rotated.</b> '
-       + 'That is a fault nothing on screen can show you, which is why it is here '
-       + 'and not in a manual.' },
-    { k: 'find', rail: 'Find them',
-      h: 'Now find them from this page.',
-      b: 'Both awake, both on. Usually there is nothing to do here: a wrap this '
-       + 'browser has met before comes up and connects itself, both hands at '
-       + 'once, because each one says which hand it is. Otherwise search, and '
-       + 'what comes up below shows how strongly it is reaching this page and '
-       + 'which hand it is for. One press connects it.', find: true }
-  ];
-
-  let stepAt = 0;
-
-  function fitGo(i) {
-    stepAt = Math.max(0, Math.min(STEPS.length - 1, i));
-    const s = STEPS[stepAt];
-    $('fit-n').textContent = 'Step ' + (stepAt + 1) + ' of ' + STEPS.length;
-    $('fit-h').textContent = s.h;
-    $('fit-b').innerHTML = s.b;
-    $('fit-art').innerHTML = '<svg viewBox="' + (s.vb || '0 0 200 92') + '">'
-                            + ART[s.k] + '</svg>';
-    $('fit-find').hidden = !s.find;
-    $('fit-back').textContent = stepAt === 0 ? 'Back to your details' : 'Back';
-    $('fit-next').textContent = s.find ? 'Go to the drills' : 'Next';
-    /* On the last step the filled button is Search, because searching is what
-       the step is for. Leaving it steps back to an outline, and the skip link
-       goes: it and the Next button would be the same press. */
-    $('fit-next').className = s.find ? 'btn-plain' : 'btn-glass';
-    $('fit-skip').parentNode.hidden = !!s.find;
-    /* The rail is the whole sequence, and the number is the state: a ring for
-       later, a crimson disc for now, a tick for done. */
-    $('fit-steps').innerHTML = STEPS.map((t, j) => `
-      <li class="fit-step${j === stepAt ? ' now' : ''}${j < stepAt ? ' done' : ''}">
-        <i aria-hidden="true">${j < stepAt ? '✓' : j + 1}</i><span>${t.rail}</span>
-      </li>`).join('');
-    if (s.find) findReady(); else stopScan();
-  }
-
-  $('fit-next').addEventListener('click', () => {
-    if (stepAt < STEPS.length - 1) { fitGo(stepAt + 1); return; }
-    renderDrills();
-    show(drills);
-  });
-  $('fit-back').addEventListener('click', () => {
-    if (stepAt === 0) { show(setup); return; }
-    fitGo(stepAt - 1);
-  });
-  $('fit-skip').addEventListener('click', () => { renderDrills(); show(drills); });
-
-  /* ── THE SEARCH ───────────────────────────────────────
+  /* ── 7. THE SEARCH ─────────────────────────────────────
      Our own list rather than a browser dialog with a list in it, built from
      whatever this browser will actually give a page:
 
        · getDevices, the wraps this browser has already been given permission to
          talk to, which needs no dialog and no gesture and is what a returning
-         pilot sees the moment they arrive on this step;
+         pilot sees the moment they open the drills;
        · watchAdvertisements, per device, which puts a live strength on each of
          those without a scan and without permission of any kind;
        · requestLEScan, a real scan run by this page, which is the only one of
@@ -3660,14 +3658,13 @@
     }).join('');
 
     /* With both wraps up, searching is not the action on this screen any more:
-       leaving is. The filled button follows the real next thing rather than
-       staying on the one the step is named after, and it goes back the moment a
-       wrap drops, because then searching is the action again. */
-    if (STEPS[stepAt] && STEPS[stepAt].find) {
-      const done = !!(WRAPS.left.device && WRAPS.right.device);
-      $('find-go').className = done ? 'btn-plain' : 'btn-glass';
-      $('fit-next').className = done ? 'btn-glass' : 'btn-plain';
-    }
+       the drills beside it are. So the button steps back to an outline, and it
+       fills again the moment a wrap drops, because then searching is the action
+       again. It used to also hand the filled state to the step's Next button;
+       there is no step and no Next, and the thing to press with both hands up is
+       a drill. */
+    const done = !!(WRAPS.left.device && WRAPS.right.device);
+    $('find-go').className = done ? 'btn-plain' : 'btn-glass';
   }
 
   /* One pairing action, both wraps up. Web Bluetooth will not hand a page two
@@ -3865,7 +3862,7 @@
     if (WRAPS.left.device && WRAPS.right.device) {
       findState('Both wraps connected themselves. Nothing to do here.');
       findNote('They told this page which hand each one is on, so there was nothing '
-        + 'to ask. Go on to the fit check, or the drills.');
+        + 'to ask. The drills beside this are unlocked: pick one.');
     } else if (up) {
       /* Which hand, not "the other one": the pilot is holding two wraps and one of
          them needs shaking, and the page knows which. */
@@ -4326,19 +4323,18 @@
   }
 
   /* The panel's own Connect button, which is a toggle. If there is genuinely
-     nothing to connect to, the honest answer is not a chooser, it is the setup
-     step, which is where finding a wrap lives and where the page can explain
-     itself. */
+     nothing to connect to, the honest answer is not a chooser: it is to go and
+     look, which is the button underneath this one, so it is pressed from here
+     rather than reported as a failure and left to the pilot to find. */
   async function pair(side) {
     if (WRAPS[side].device) { drop(side, 'Not connected'); return; }
     if (!connectReady()) return;
     const r = await connectSide(side);
     if (r.ok || r.why !== 'none found') return;
-    connectNote('There is no wrap for your ' + side + ' hand to connect to yet. '
-      + 'Finding them happens in the setup step, in this page, so that is where '
-      + 'this goes.');
-    fitGo(STEPS.length - 1);
-    show(fitPane);
+    connectNote('Nothing is answering for your ' + side + ' hand yet, so this is '
+      + 'searching. A wrap sleeps until it is shaken: shake it and it comes up '
+      + 'below.');
+    startScan();
   }
 
   /* Every route to a connected wrap ends here: the search list, the panel
@@ -4684,7 +4680,16 @@
     $('run-head').textContent = d.guided
       ? (d.secs <= 120 ? 'One minute.' : asClock(RUN.total).replace(':00', ' minutes.'))
       : 'Not guided yet.';
-    $('run-cue').innerHTML = say(d.why);
+    /* Why this drill exists, and then the one line the drills screen used to
+       carry above the cards, moved to the screen it applies to and read a second
+       before it is needed rather than four screens earlier. Only on a guided
+       drill: it is about getting a rep wrong, and a drill with no reps in it yet
+       cannot have one. */
+    $('run-cue').innerHTML = say(d.why) + (d.guided
+      ? ' If you throw the wrong punch or lose the tempo, carry on rather than '
+        + 'starting again: five mislabelled seconds cost us nothing and a '
+        + 'restarted drill costs twelve minutes.'
+      : '');
     $('run-send').hidden = true;
     $('run-count').textContent = '0';
     $('run-left').textContent = asClock(RUN.total);
@@ -5712,17 +5717,15 @@
                      profile lives in this browser, and if the browser will not
                      keep it there is nothing to tell them to do about it that is
                      not worse than saying nothing. */ }
-    /* Saved, and then straight into the fitting rather than into the drills: the
-       thing standing between a filled-in profile and a drill is a pair of wraps
-       on the right side of two wrists. Skippable from in there for anybody who
-       has already done it once. */
+    /* Saved, and then the drills. There were four setup steps in between, three
+       of them things done with your hands and the fourth a search, and the search
+       is now in the wraps panel beside the drills where being connected is a
+       thing that is either true or not rather than a step with an end. */
     renderDrills();
-    fitGo(0);
-    show(fitPane);
+    show(drills);
   });
 
   $('back-to-setup').addEventListener('click', () => show(setup));
-  $('to-fit').addEventListener('click', () => { fitGo(0); show(fitPane); });
 
   /* Anything already saved comes back into the controls, so a pilot who returns
      is editing their profile rather than re-entering it. */
