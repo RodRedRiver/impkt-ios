@@ -67,6 +67,13 @@ struct PilotPage: UIViewRepresentable {
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.allowsBackForwardNavigationGestures = false
+        // The canvas, on the view and on its scroller, for the two moments what is on
+        // screen is not the page's own background: before the first paint, and in the
+        // gutter that opens when a screen is dragged past its end. Both were white,
+        // which is the same white that made the bands above and below the page read as
+        // borders. Same hex as `body` in the page, which is the point.
+        web.backgroundColor = UIColor(Color.pageCanvas)
+        web.scrollView.backgroundColor = UIColor(Color.pageCanvas)
         // Bounce is on, which is the default and now the right default: the page
         // scrolls on a phone, and a scrolling view that stops dead at its ends is
         // the one part of this that would not feel like iOS. It was off while the
@@ -78,8 +85,8 @@ struct PilotPage: UIViewRepresentable {
         // the activation code: six short things that fit any phone with room to
         // spare. Dragging it made the whole screen slide and spring back, which
         // is the gesture that says "there is more below" on a screen where there
-        // is nothing below. Now the bounce belongs to the screens that scroll —
-        // the briefing and the drill list — and the ones that fit hold still.
+        // is nothing below. Now the bounce belongs to the screens that scroll, the
+        // briefing and the drill list, and the ones that fit hold still.
         web.scrollView.alwaysBounceVertical = false
         #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
@@ -164,6 +171,9 @@ final class Bridge: NSObject, WKScriptMessageHandler {
 
     func attach(_ web: WKWebView) {
         self.web = web
+        // Also handed to PageStorage, which is how the Devices and Profile tabs read
+        // what the page has written down without keeping a second copy of it.
+        PageStorage.attach(web)
         WrapCentral.shared.emit = { [weak self] event, payload in
             self?.call("window.__impkt.\(event)", payload)
         }

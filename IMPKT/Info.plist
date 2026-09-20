@@ -45,6 +45,14 @@
 	<false/>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- The page has one appearance and it is light: a white product photographed on
+	     a light grey ground, with no dark variant of any of it. The native tabs are
+	     painted that same grey so the seam between them and the page does not show,
+	     which only works in one appearance. Left to follow the system, dark mode
+	     bolted a dark tab bar to a light page and put dark mode's own white labels on
+	     top of a #f5f5f7 bar, where they cannot be read. -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

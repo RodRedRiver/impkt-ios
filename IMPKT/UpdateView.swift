@@ -132,7 +132,11 @@ final class Updater: NSObject, ObservableObject {
         // target released nothing: the pilot page's link to the application stayed
         // up, the wrap went quiet, and the DFU library spent twenty five seconds
         // failing to find a board that was connected to us the entire time.
-        WrapCentral.shared.stopScan()
+        // takeRadio rather than stopScan, because stopping it is not the same as
+        // keeping it stopped: the pilot page asks for a scan whenever it looks for a
+        // wrap, and the Devices tab asks for one every time it appears. Either would
+        // have started one underneath the transfer.
+        WrapCentral.shared.takeRadio()
         WrapCentral.shared.releaseAll { [weak self] in
             self?.controller = initiator.start(target: peripheral)
         }
@@ -174,7 +178,9 @@ final class Updater: NSObject, ObservableObject {
                           + "below, and press Update on it.")
             detail = ""
             neverConnected = true
-            WrapCentral.shared.startScan()
+            // giveBackRadio and not startScan: nothing is being updated, so whatever
+            // an earlier attempt left set has to come off before a scan is allowed.
+            WrapCentral.shared.giveBackRadio()
             return
         }
         start(wrap)
@@ -186,6 +192,10 @@ final class Updater: NSObject, ObservableObject {
         phase = .idle
         detail = ""
         progress = 0
+        // Also here, and not only in the .aborted state the library is expected to
+        // report: an abort that never lands would otherwise leave the radio held for
+        // the rest of the launch, with every scan in the app quietly refused.
+        WrapCentral.shared.giveBackRadio()
     }
 }
 
@@ -231,12 +241,12 @@ extension Updater: DFUServiceDelegate {
             // Scanning was stopped for the duration so the two scans did not
             // fight. Putting it back is what makes the wrap reappear in the list
             // on its new firmware, which is also the proof that it came back.
-            WrapCentral.shared.startScan()
+            WrapCentral.shared.giveBackRadio()
         case .aborted:
             phase = .idle
             detail = "Stopped. The wrap kept the firmware it had."
             controller = nil
-            WrapCentral.shared.startScan()
+            WrapCentral.shared.giveBackRadio()
         // The library adds states between releases, and a new one is not a
         // failure: the update is still running, so the screen says so rather
         // than showing stale text or claiming to be finished.
@@ -259,7 +269,7 @@ extension Updater: DFUServiceDelegate {
         // jump succeeded and only the upload failed, the wrap is sitting in its
         // bootloader right now and the scan is the only thing that can find it.
         // It shows up as AdaDFU, with Finish update next to it.
-        WrapCentral.shared.startScan()
+        WrapCentral.shared.giveBackRadio()
     }
 }
 
@@ -453,6 +463,7 @@ struct UpdateView: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
+            .onCanvas()
             .navigationTitle("Update")
             .onAppear { central.startScan() }
             .onDisappear {

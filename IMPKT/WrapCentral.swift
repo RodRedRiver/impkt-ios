@@ -62,6 +62,15 @@ final class WrapCentral: NSObject, ObservableObject {
     @Published private(set) var poweredOn = false
     @Published private(set) var found: [FoundWrap] = []
     @Published private(set) var scanning = false
+    /// True while a firmware update owns the radio.
+    ///
+    /// An update stops the scan as its first act and the DFU library runs a scan of
+    /// its own to find the bootloader; a second scan on top of that is the thing that
+    /// used to make an update sit for twenty five seconds finding nothing. Stopping
+    /// the scan is not enough on its own, because anything can start one again: the
+    /// page does when it looks for a wrap, and a screen does when it appears. So the
+    /// flag refuses them for the duration rather than trusting every caller to ask.
+    @Published private(set) var updating = false
 
     /// Set by the web view: (event name, payload) delivered into the page.
     var emit: ((String, [String: Any]) -> Void)?
@@ -105,6 +114,8 @@ final class WrapCentral: NSObject, ObservableObject {
     // MARK: - things the app's own screens use
 
     func startScan() {
+        // Refused while an update is in flight, whoever is asking. See `updating`.
+        guard !updating else { return }
         whenReady {
             // Both services, because a wrap whose update was interrupted is
             // sitting in its bootloader advertising the DFU service and nothing
@@ -133,6 +144,28 @@ final class WrapCentral: NSObject, ObservableObject {
         // moment the wrap was repaired. Not scanning is a reason to trust the list
         // LESS, not to preserve it, so the rows age out either way.
         startPruning()
+    }
+
+    /// Handed to the updater for the length of an update, and handed back afterwards.
+    ///
+    /// Two calls rather than a flag the updater sets itself, so that taking the radio
+    /// and stopping the scan cannot come apart, and so there is one place to read to
+    /// find out what they mean.
+    func takeRadio() {
+        stopScan()
+        updating = true
+    }
+
+    func giveBackRadio() {
+        updating = false
+        startScan()
+    }
+
+    /// Every wrap this phone has been given permission for, whether or not it is
+    /// answering right now. The page's own list of wraps comes from the same place.
+    var knownWraps: [UUID] {
+        (UserDefaults.standard.stringArray(forKey: knownKey) ?? [])
+            .compactMap { UUID(uuidString: $0) }
     }
 
     /// Rows go away when the wrap they describe stops speaking. Without this the
@@ -261,7 +294,10 @@ final class WrapCentral: NSObject, ObservableObject {
         }
     }
 
-    private func forget(_ id: UUID) {
+    /// Drops a wrap from the permitted list. Asked for by the page through the bridge,
+    /// and by the Forget button on the Devices tab. Reversible: the wrap is picked
+    /// again the next time something needs it, and nothing on the board changes.
+    func forget(_ id: UUID) {
         let all = (UserDefaults.standard.stringArray(forKey: knownKey) ?? [])
             .filter { $0 != id.uuidString }
         UserDefaults.standard.set(all, forKey: knownKey)
