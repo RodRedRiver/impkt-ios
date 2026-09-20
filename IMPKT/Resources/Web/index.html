@@ -17,8 +17,6 @@
        unfurl in a chat app. -->
   <meta name="robots" content="noindex, nofollow">
 
-  <link rel="preload" href="../fonts/ibm-plex-sans-latin.woff2" as="font"
-    type="font/woff2" crossorigin>
   <link rel="stylesheet" href="../css/pilot.css">
 
   <style>
@@ -32,8 +30,8 @@
             one job and there is nowhere else to go from here.
          2. THE NAME. Everything on screen leaves, and the pilot's name
             arrives alone at the size of the window, letter by letter, in
-            the accent's gradient. This is the whole point of the page and
-            it is given the whole page.
+            carbon. This is the whole point of the page and it is given the
+            whole page.
          3. THE SNAP. The name flies to the middle of the page, lands with a
             click at a size that still owns the screen, and becomes the title
             everything below it sits under.
@@ -50,42 +48,65 @@
        Which also gives the bolt mark its usual top-left back: it only moved to
        the right when the name wanted that corner, and now nothing does.
 
-       The furniture is liquid glass on the same recipe as the app: a
-       translucent fill, a heavy backdrop blur with a saturation lift, a bright
-       hairline, an inner top highlight, and a specular sheen raked across the
-       top-left. Glass needs something behind it to refract or it reads as grey
-       plastic, so the white page carries three soft blooms under it.
+       The furniture is flat, on .claude/APPLE-DESIGN.md: a #f5f5f7 canvas, white
+       cards with a 1px #d2d2d7 hairline at an 8px radius, no shadows anywhere,
+       and SF for the type. It was liquid glass over three blurred colour fields,
+       which is what the app's own Update tab is not.
        ══════════════════════════════════════════════════════════ */
 
-    /* ── THE GLASS ──────────────────────────────────────────────
-       Lifted from impkt-app.html's light theme rather than re-picked, for the
-       same reason the wash and the rules were lifted from the marketing site:
-       one system, three surfaces. Only the light values come over. This site
-       has no dark mode, because it is one page a person opens once.
+    /* ── THE SURFACES ───────────────────────────────────────────
+       This was liquid glass: translucent fills, a 26px backdrop blur with a
+       saturation lift, specular sheens, and three blurred colour fields behind
+       the page for the blur to refract. It is now flat, on .claude/APPLE-DESIGN.md,
+       to match the app's Update tab. That tab is a plain iOS list, and two tabs
+       of one app disagreeing about whether surfaces are glass or paper reads as
+       two apps.
 
-       There is no crimson tint set here any more. Selected pills and primary
-       buttons were tinted glass, and a 0.12 to 0.20 crimson over a warm page
-       comes out salmon, which is not a colour the brand has. Anything that has
-       to read as chosen is either opaque white or the full crimson slab from
-       the shared layer. The glass is for panels. */
+       The token names are kept even though nothing here is glass any more. They
+       are used in about forty places and renaming them would turn a look into a
+       refactor, which is a worse diff to read and a worse one to revert.
+
+       Flatness is the whole system: hierarchy comes from the canvas shifting
+       (#f5f5f7 page, white card) and from 1px hairlines, never from elevation.
+       The spec is explicit that the only shadow in it belongs to product
+       photography, so there are no shadows on cards, buttons or panels. */
     :root {
-      --glass:      rgba(255,255,255,0.60);
-      --glass-2:    rgba(255,255,255,0.38);
-      --glass-brd:  rgba(255,255,255,0.80);
-      --glass-hi:   rgba(255,255,255,0.95);
+      --frost:      #f5f5f7;   /* the canvas */
+      --hair:       #d2d2d7;   /* the only border colour on a light surface */
+
+      --glass:      var(--white);
+      --glass-2:    var(--frost);
+      --glass-brd:  var(--hair);
+      --glass-hi:   transparent;
       --ink-glass:  rgba(10,10,12,0.05);
-      --shadow:     0 12px 36px rgba(18,18,24,0.10), 0 2px 8px rgba(18,18,24,0.05);
+      --shadow:     none;
 
-      /* The lifted white a selected segment and the tick both sit on, with the
-         specular edge and the shadow it casts on the trough under it. */
-      --lift:       rgba(255,255,255,0.85);
-      --lift-shadow: 0 1px 3px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
+      /* What a selected segment and a tick sit on. Opaque white against the
+         pebble trough, and the "shadow" is a hairline: the spec allows a border
+         to do this job and does not allow a shadow to. */
+      --lift:       var(--white);
+      --lift-shadow: 0 0 0 1px var(--hair);
 
-      /* The app's roundness scale, which is the one thing about the app's
-         geometry that was a deliberate divergence from the square-cornered
-         marketing site. Glass with an 8px radius is a window pane. */
-      --r-s: 14px; --r: 20px; --r-l: 28px; --r-xl: 34px;
-      --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+      /* Two radii, which is all the system has: 8px for anything with a surface,
+         and the pill for anything you press. The app's 14-to-34px scale went
+         with the glass, because a 28px radius on a flat white card is a shape
+         with no reason for being that shape. */
+      --r-s: 8px; --r: 8px; --r-l: 8px; --r-xl: 8px;
+      --spring: cubic-bezier(0.4, 0, 0.2, 1);
+
+      /* SF, not IBM Plex. This is the one change here that is not about
+         decoration: the Update tab is a native list set in SF, and two tabs of
+         one app in two typefaces is the thing you notice first when you swipe
+         between them, before any surface treatment. -apple-system resolves to
+         the real SF on the phone and in this web view, which is the only place
+         this page is read in the app.
+
+         pilot.css keeps IBM Plex for the marketing pages and its @font-face is
+         left alone; an unreferenced face is not downloaded. Overriding the token
+         rather than the rules because every rule on this page already goes
+         through it. */
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif,
+              system-ui, "Segoe UI", Roboto, sans-serif;
     }
 
     .glass {
@@ -93,21 +114,13 @@
       background: var(--glass);
       border: 1px solid var(--glass-brd);
       border-radius: var(--r-l);
-      box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow);
-      backdrop-filter: blur(26px) saturate(190%);
-      -webkit-backdrop-filter: blur(26px) saturate(190%);
+      box-shadow: none;
       isolation: isolate;
     }
-    /* The sheen. Without it a translucent panel reads as frosted plastic:
-       plastic scatters light evenly, glass has a bright edge where the light
-       rakes across it and a second faint one where it leaves. */
-    .glass::before {
-      content: ''; position: absolute; inset: 0; z-index: -1;
-      pointer-events: none; border-radius: inherit;
-      background: linear-gradient(146deg, var(--glass-hi) 0%, transparent 42%,
-                  transparent 62%, rgba(255,255,255,0.14) 100%);
-      opacity: 0.7;
-    }
+    /* The sheen is gone with the glass. Kept as an empty rule rather than
+       deleted so that nothing inheriting ::before positioning from it silently
+       changes layout. */
+    .glass::before { content: none; }
 
     /* The primary action is the site's crimson slab, full strength, white ink.
        It was a pane of tinted glass here and the tint read as salmon against the
@@ -145,90 +158,26 @@
     .btn-plain:active { transform: scale(0.965); }
 
     /* ── THE BACKGROUND ─────────────────────────────────────── */
-    /* The home page's hero has three layers behind it: a directional wash, a
-       set of faint horizontal rules, and three sine curves. Asked for "those
-       waves but maybe not the waves", so the first two come over and the curves
-       do not — which is the right two of the three to take. The curves are the
-       home page's signature and repeating them here would make this feel like a
-       section of that page rather than a separate arrival; the wash and the
-       rules are just the statement that the white has a room and a light in it.
+    /* There isn't one. The canvas is a flat #f5f5f7 and that is the entire
+       background layer.
 
-       Both values are lifted from css/impkt.css verbatim rather than re-picked.
-       The wash grows *away* from 34% 26% — a bloom on a white page is nothing at
-       all, there being no headroom above 255, so the light is described from the
-       other side by darkening everything that is not near it. 0.032 at the far
-       corner is eight levels out of 255, and off-centre so it reads as room
-       shading rather than the vignette a centred one would be. The rules are
-       0.024 every 112px, which is one antialiased line's worth of grey.
+       What was here: a directional wash lifted from the home page's hero, faint
+       horizontal rules every 112px, a blurred crimson bloom behind the pilot's
+       name, and three wide colour fields at the edges of the window for the
+       panel blur to refract. All four are gone. They were built to give glass
+       something to pick up, and with flat surfaces there is nothing to refract,
+       so they stopped being depth and became pattern on a page that is supposed
+       to read as paper.
 
-       Fixed, not absolute: the pilot's page scrolls and the room does not. */
-    .depth {
-      position: fixed; inset: 0; z-index: 0;
-      pointer-events: none;
-      background:
-        radial-gradient(120% 90% at 34% 26%,
-                        rgba(0,0,0,0) 0%,
-                        rgba(0,0,0,0.012) 40%,
-                        rgba(0,0,0,0.032) 100%),
-        repeating-linear-gradient(to bottom,
-                        rgba(0,0,0,0.024) 0 1px,
-                        rgba(0,0,0,0) 1px 112px);
-    }
-    /* The one thing here the home page does not have. The name is the only
-       moment on this domain that is about a person, and it gets a bloom behind
-       it the way Avalon's die does — a wide, heavily blurred red at an opacity
-       where it is a change in the white rather than a visible shape. It arrives
-       with the name and mostly leaves with it: 0.34 while the name owns the
-       screen, 0.1 once the name is a header and the page is the subject.
+       The three elements are still in the markup and are turned off here rather
+       than deleted, because they are also in the website copy of this page and a
+       one-line revert is worth more than a tidy DOM. */
+    .depth, .bloom, .ambient { display: none; }
 
-       blur() on a filled radial rather than a wider gradient, for the reason
-       the Avalon bloom gives — a gradient's falloff is linear in the stop list
-       and a Gaussian is not, and at this radius you can see which one it is.
-       Held faint enough not to touch the contrast of the type in front of it. */
-    .bloom {
-      position: fixed; z-index: 0;
-      left: 50%; top: 50%;
-      width: 116vw; height: 74vh;
-      transform: translate(-50%, -50%);
-      border-radius: 50%;
-      /* Warm at the centre and red at the edge, which is the name's own ramp
-         thrown out of focus behind it. A flat red wash under warm type reads as
-         the light being the wrong colour for the object in it. */
-      background: radial-gradient(50% 50% at 42% 56%,
-                  rgba(255,176,88,0.34) 0%,
-                  rgba(240,88,72,0.18) 38%,
-                  rgba(196,30,58,0.10) 60%,
-                  rgba(196,30,58,0) 76%);
-      filter: blur(80px);
-      opacity: 0; pointer-events: none;
-      transition: opacity 1.2s var(--ease-smooth);
-    }
-    .bloom.lit    { opacity: 0.42; }
-    .bloom.settled { opacity: 0.10; }
-
-    /* What the glass refracts. Three wide, heavily blurred colour fields at the
-       edges of the window: one crimson, one cool, one white. On their own they
-       are invisible on a white page, which is the intention. They exist so that
-       a panel's blur has something other than flat white to pick up, and so
-       that moving a panel changes what is behind it.
-
-       Fixed and at the edges rather than in the middle, so nothing ever passes
-       behind body text and lifts a warm cast into it. */
-    .ambient { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-    .ambient i { position: absolute; display: block; border-radius: 50%; filter: blur(90px); }
-    .ambient i:nth-child(1) {
-      width: 44vw; height: 44vw; left: -14vw; top: -10vw;
-      background: rgba(196,30,58,0.13);
-    }
-    .ambient i:nth-child(2) {
-      width: 50vw; height: 50vw; right: -18vw; top: 26vh;
-      background: rgba(120,130,170,0.15);
-    }
-    .ambient i:nth-child(3) {
-      width: 38vw; height: 38vw; left: 8vw; bottom: -16vw;
-      background: rgba(255,176,88,0.12);
-    }
-
+    /* The canvas itself. pilot.css sets the body to white, which is correct for
+       the marketing pages; this one is a stack of cards and needs the shift
+       between canvas and card to do the work the borders used to. */
+    body { background: var(--frost); }
     /* Everything real sits above the room. */
     main { position: relative; z-index: 1; }
 
@@ -290,18 +239,14 @@
       letter-spacing: 0.18em;
       text-transform: uppercase;
       min-height: 52px; padding: 0 18px;
-      /* Glass, like everything else the finger touches on this page. The fill
-         is the thinner of the two: a field is a hole in the surface rather than
-         a panel sitting on it, so it takes less light than the button beside
-         it and has no inner highlight to lift its top edge. */
-      background: var(--glass-2);
-      border: 1px solid var(--glass-brd);
-      border-radius: var(--radius-pill);
-      backdrop-filter: blur(20px) saturate(170%);
-      -webkit-backdrop-filter: blur(20px) saturate(170%);
-      box-shadow: inset 0 1px 3px rgba(18,18,24,0.06);
+      /* The spec's form input: frost fill, hairline border, 8px. Not a pill.
+         The pill radius belongs to things you press, and a ten-character field
+         shaped like a button is a field that looks pressable. */
+      background: var(--frost);
+      border: 1px solid var(--hair);
+      border-radius: var(--r-s);
     }
-    .code-field:hover { border-color: var(--glass-hi); background: var(--glass); }
+    .code-field:hover { border-color: var(--ash); }
     .code-field:focus {
       outline: 2px solid var(--red); outline-offset: 2px;
       border-color: transparent; background: var(--glass);
@@ -362,8 +307,7 @@
       line-height: 1.35;
       transform: translate(-50%, -50%);
       transform-origin: 50% 50%;
-      /* Flat, and only ever seen if the clip below is unavailable. */
-      color: var(--red-deep);
+      color: var(--carbon);
       opacity: 0; pointer-events: none;
     }
     .name.lit { opacity: 1; }
@@ -409,26 +353,18 @@
        is real text in an <h1> and a <title> for anything not reading it by eye,
        and a user who has asked for more contrast gets the flat deep red below
        instead. */
-    @supports ((background-clip: text) or (-webkit-background-clip: text)) {
-      .name .ch {
-        background-image: linear-gradient(to right,
-          #FFCE7A 0%, #FF9A4D 16%, #F4514E 44%, #D6203C 70%, #C41E3A 100%);
-        background-repeat: no-repeat;
-        /* Fallbacks matter: until paintRamp() runs, or if it ever cannot
-           measure, each letter gets the whole ramp to itself. Wrong, but wrong
-           in the direction of still being warm text rather than nothing. */
-        background-size: var(--ramp-w, 100%) 100%;
-        background-position: var(--ramp-x, 0px) 0;
-        -webkit-background-clip: text; background-clip: text;
-        color: transparent;
-      }
-    }
-    /* A gradient clipped to text is a hairline from unreadable for a user who
-       has asked for more contrast — its light end does the opposite of what
-       was asked. */
-    @media (prefers-contrast: more) {
-      .name .ch { background: none; color: var(--red-deep); }
-    }
+    /* Solid carbon, no clipped gradient. What was here: a five-stop amber to
+       crimson ramp painted per letter and reassembled across the word, with the
+       offset arithmetic that needed. It was the most decorative thing on the
+       domain, and the spec it now follows puts display type in one ink and keeps
+       colour for the thing you press. Deleting it also takes paintRamp()'s two
+       custom properties out of the visual contract; the function still runs and
+       now sets properties nothing reads, which is harmless and stays until the
+       script is next touched.
+
+       The prefers-contrast override went with it: there is nothing left to
+       override, because the high-contrast answer and the normal one are now the
+       same solid ink. */
 
     /* Per-letter arrival, and slow on purpose. The letters rise out of their
        own line and resolve out of a blur rather than fading in place: a name
@@ -440,12 +376,10 @@
       display: inline-block;
       transform: translateY(0.34em) scale(0.965);
       opacity: 0;
-      filter: blur(14px);
       transition: transform 1.15s var(--ease),
-                  opacity 0.95s var(--ease-smooth),
-                  filter 0.95s var(--ease-smooth);
+                  opacity 0.95s var(--ease-smooth);
     }
-    .name .ch.in { transform: none; opacity: 1; filter: blur(0); }
+    .name .ch.in { transform: none; opacity: 1; }
     .name .sp { display: inline-block; width: 0.26em; }
 
     /* On a phone the name is set on two lines, the given name over the rest, and
@@ -489,16 +423,9 @@
       letter-spacing: -0.032em;
       line-height: 1.35;   /* matches .name, see the note there */
       white-space: nowrap;
-      /* The same five stops the flying copy carries, so the cross-fade at the
-         landing is between two identically painted things. See the long note on
-         .name .ch. No offset arithmetic needed here: this is one element with
-         one text node in it, so `to right` already spans the whole word, and by
-         the landing the flying copy has been scaled to this element's width.
-         Same word, same proportions, same colour at every letter. */
-      background: linear-gradient(to right,
-        #FFCE7A 0%, #FF9A4D 16%, #F4514E 44%, #D6203C 70%, #C41E3A 100%);
-      -webkit-background-clip: text; background-clip: text;
-      color: transparent;
+      /* The same ink as the flying copy, so the cross-fade at the landing is
+         between two identically painted things. */
+      color: var(--carbon);
       opacity: 0;
       transition: opacity 0.14s linear, font-size 0.5s var(--ease);
     }
@@ -509,12 +436,6 @@
        the same movement the pane swap does, so it reads as the page settling
        into work rather than as the name being demoted. */
     .hub.compact .name-title { font-size: clamp(24px, 3.4vw, 44px); }
-    @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
-      .name-title { background: none; color: var(--red-deep); }
-    }
-    @media (prefers-contrast: more) {
-      .name-title { background: none; color: var(--red-deep); }
-    }
     .name-title.lit { opacity: 1; }
 
     /* ── THE PAGE UNDER IT ──────────────────────────────────── */
@@ -845,11 +766,14 @@
       #setup { justify-content: flex-start; }
     }
 
-    /* The slider is the app's slider and the marketing site's, not a third one:
-       a 6px track filled crimson up to the value, a white lens to drag, and the
-       shadow doing the lifting rather than a border. The fill is a background
-       gradient with its stop at --slider-fill, set by script on every input,
-       because a native track cannot be painted either side of the thumb. */
+    /* A 6px track filled crimson up to the value and a white lens to drag. The
+       two-stop fill at --slider-fill is set by script on every input, because a
+       native track cannot be painted either side of the thumb; it is a hard stop
+       rather than a fade, so it is a fill and not a gradient.
+
+       The thumb used to be lifted by a three-layer shadow. It is a hairline now:
+       flatness is the system, and a 22px circle needs an edge rather than a
+       cast. */
     input[type="range"] {
       -webkit-appearance: none; appearance: none;
       width: 100%; margin-top: 22px; height: 22px;
@@ -862,31 +786,27 @@
       height: 6px; border-radius: var(--radius-pill);
       background: linear-gradient(90deg,
         var(--red) 0 var(--slider-fill, 50%),
-        rgba(0,0,0,0.10) var(--slider-fill, 50%) 100%);
+        var(--hair) var(--slider-fill, 50%) 100%);
     }
     input[type="range"]::-moz-range-track {
       height: 6px; border-radius: var(--radius-pill);
       background: linear-gradient(90deg,
         var(--red) 0 var(--slider-fill, 50%),
-        rgba(0,0,0,0.10) var(--slider-fill, 50%) 100%);
+        var(--hair) var(--slider-fill, 50%) 100%);
     }
     input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none; appearance: none;
       width: 22px; height: 22px; margin-top: -8px;
       border: none; border-radius: 50%;
       background: var(--white);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.18),
-                  0 3px 10px -2px rgba(0,0,0,0.16),
-                  0 0 0 0.5px rgba(0,0,0,0.06);
+      box-shadow: 0 0 0 1px var(--hair);
       transition: transform 0.18s var(--ease-smooth);
     }
     input[type="range"]::-moz-range-thumb {
       width: 22px; height: 22px;
       border: none; border-radius: 50%;
       background: var(--white);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.18),
-                  0 3px 10px -2px rgba(0,0,0,0.16),
-                  0 0 0 0.5px rgba(0,0,0,0.06);
+      box-shadow: 0 0 0 1px var(--hair);
     }
     input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
     input[type="range"]:focus-visible { outline: none; }
@@ -904,12 +824,15 @@
       font-variant-numeric: tabular-nums;
     }
 
-    /* ── THE GLASS TABS ─────────────────────────────────────────
-       Every choice on this page is one of these: a recessed glass trough with
-       the options as pills inside it, centred, one line each. The selected pill
-       is the only piece of glass in the trough, which is what makes the state
-       readable without a tick, a dot or a colour fill: the chosen answer is
-       lit and raised and the rest of the row is the hole it sits in.
+    /* ── THE SEGMENTED CHOICES ──────────────────────────────────
+       Every choice on this page is one of these: a pebble trough with the
+       options as pills inside it, centred, one line each. The selected pill is
+       opaque white on a grey trough, which is the one surface shift that carries
+       the state, so it still needs no tick, dot or colour fill.
+
+       It was a recessed glass trough with the selected pill as the only glass in
+       it. Same idea, and the flat version is the shape iOS has used for a
+       segmented control since it stopped being glossy.
 
        Real radios underneath, one per pill. The pill is the label. */
     .grp { display: flex; flex-direction: column; align-items: center; }
@@ -922,11 +845,8 @@
       display: inline-flex; flex-wrap: wrap; justify-content: center;
       gap: 4px; margin-top: 7px; padding: 4px;
       border-radius: var(--radius-pill);
-      background: var(--ink-glass);
-      border: 1px solid var(--glass-brd);
-      backdrop-filter: blur(20px) saturate(170%);
-      -webkit-backdrop-filter: blur(20px) saturate(170%);
-      box-shadow: inset 0 1px 3px rgba(18,18,24,0.07);
+      background: var(--pebble);
+      border: 1px solid transparent;
       max-width: 100%;
     }
     .tabs input { position: absolute; opacity: 0; width: 0; height: 0; }
@@ -942,15 +862,12 @@
     }
     .tabs label:hover { color: var(--carbon); }
     .tabs label:active { transform: scale(0.96); }
-    /* The selected pill is the site's selected segment: opaque white, carbon
-       ink, a specular top edge and the shadow it casts on the trough. It is the
-       one element in the row that lets nothing through, which is what makes it
-       read as lifted. It was tinted crimson glass and came out salmon. */
+    /* The selected pill: opaque white with a hairline, on the grey trough. */
     .tabs input:checked + label {
       color: var(--carbon); font-weight: 500;
-      border-color: transparent;
+      border-color: var(--hair);
       background: var(--white);
-      box-shadow: inset 0 1px 0 var(--lift), var(--lift-shadow);
+      box-shadow: none;
     }
     .tabs input:focus-visible + label { outline: 2px solid var(--red); outline-offset: 2px; }
 
@@ -1009,7 +926,7 @@
       display: grid; place-items: center;
       font-style: normal; font-size: 11.5px; font-variant-numeric: tabular-nums;
       background: var(--white); color: var(--ash);
-      box-shadow: inset 0 1px 0 var(--lift), var(--lift-shadow);
+      box-shadow: 0 0 0 1px var(--hair);
     }
     .fit-step.now { color: var(--carbon); font-weight: 500; }
     .fit-step.now i { background: var(--red); color: var(--white); box-shadow: none; }
@@ -1036,8 +953,7 @@
     .fit-art {
       margin-top: 14px; padding: 10px 0;
       display: grid; place-items: center;
-      border-radius: var(--r-s); background: rgba(255,255,255,0.5);
-      box-shadow: inset 0 1px 0 var(--lift);
+      border-radius: var(--r-s); background: var(--frost);
     }
     /* 264 is 400 at the wear step's aspect: any taller and the width stops being
        the limit, so the drawing would sit in the middle of its own box. */
@@ -1211,7 +1127,7 @@
       grid-row: 1 / span 2; width: 46px; height: 46px;
       border-radius: var(--r-s);
       background: var(--white);
-      box-shadow: inset 0 1px 0 var(--lift), var(--lift-shadow);
+      box-shadow: 0 0 0 1px var(--hair);
       display: grid; place-items: center;
     }
     .dcard-ico svg { width: 28px; height: 28px; display: block; }
@@ -1314,7 +1230,6 @@
     .wrap-dot {
       width: 10px; height: 10px; border-radius: 50%;
       background: var(--pebble);
-      box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.06);
     }
     .wrap.live .wrap-dot { background: var(--red); }
     .wrap.busy .wrap-dot { background: var(--red); animation: pulse 1.1s ease-in-out infinite; }
@@ -1436,8 +1351,7 @@
        across a room. */
     .run-bar {
       margin-top: 18px; height: 10px; border-radius: var(--radius-pill);
-      background: rgba(0,0,0,0.09); overflow: hidden;
-      box-shadow: inset 0 1px 0 rgba(10,10,12,0.05);
+      background: var(--pebble); overflow: hidden;
     }
     .run-bar i {
       display: block; height: 100%; width: 0;
@@ -1691,19 +1605,10 @@
          punching to a circle that only tells them they are already late. */
     }
 
-    /* A backdrop blur is a per-frame full-screen read on every panel that has
-       one, and on a machine that cannot afford it the whole page drops frames
-       rather than one panel looking wrong. So where the browser tells us the
-       user wants less work done, the glass becomes an opaque tint: same
-       geometry, same hairline, same highlight, no blur. */
-    @media (prefers-reduced-transparency: reduce) {
-      .glass, .btn-glass, .btn-plain, .tabs, .code-field {
-        backdrop-filter: none; -webkit-backdrop-filter: none;
-      }
-      .glass, .btn-plain, .code-field { background: rgba(255,255,255,0.94); }
-      .tabs { background: var(--frost); }
-      .ambient { display: none; }
-    }
+    /* There was a prefers-reduced-transparency block here, turning the backdrop
+       blurs into opaque tints for anyone who had asked for less work per frame.
+       Every surface is opaque now, so the page already renders what that block
+       used to produce and there is nothing left for it to switch off. */
 
     /* ── RESPONSIVE ─────────────────────────────────────────── */
     /* A phone is a page, not a screen.
@@ -1790,6 +1695,16 @@
        top of the content. The padding it was being given back comes with it. */
     html.in-app .mark { display: none; }
     html.in-app .hub { padding-top: clamp(18px, 3vh, 44px); }
+
+    /* Two bits of copy that earn their place on the website and not here.
+       The eyebrow tells a visitor arriving from a link what page they are on;
+       in the app they are already in IMPKT, on a tab called Test, so it is the
+       app's own name read back to it. And there is no space bar on a phone, so
+       the keyboard half of the punch hint is an instruction that cannot be
+       followed. Hidden rather than deleted, because both are still true of the
+       page served at impktband.com from this same file. */
+    html.in-app .eyebrow { display: none; }
+    html.in-app .kb { display: none; }
   </style>
 </head>
 <body>
@@ -2133,12 +2048,12 @@
             <button class="btn-plain" type="button" id="back-to-setup">Change your details</button>
           </div>
           <p class="setup-note">
-            Your profile lives in this browser and nothing is sent while you fill
-            it in. When you finish a drill, that drill is uploaded to our database
-            and to nowhere else, and it carries a copy of this: your name, your
-            gym, your serial, what the drill asked for and every punch in it. That
-            is the whole point of a pilot, and it is the only thing we send. Clear
-            your browsing data and you will be asked for the profile again.
+            Your profile stays on this device and nothing is sent while you fill
+            it in. When you finish a drill, that drill goes to our database and
+            nowhere else, and it carries a copy of this: your name, your gym,
+            your serial, what the drill asked for and every punch in it. That is
+            the only thing we send. Clear the stored data and you will be asked
+            for the profile again.
           </p>
         </div>
 
@@ -2155,10 +2070,7 @@
              bars go flat and the row says why instead of inventing a number. -->
         <aside class="glass connect" id="connect" aria-label="Your wraps">
           <h2 class="connect-h">Your wraps</h2>
-          <p class="connect-b">
-            One per hand, on the inside of each wrist. This is the only thing on
-            the page that talks to them.
-          </p>
+          <p class="connect-b">One per hand, on the inside of each wrist.</p>
           <ul class="wraps">
             <li class="wrap" id="wrap-left">
               <div class="wrap-hd">
@@ -2243,7 +2155,7 @@
             <span class="beat-i" aria-hidden="true"></span>
           </button>
           <p class="beat-t" id="run-tempo">No tempo</p>
-          <p class="run-hint" id="run-hint">Tap the circle, or press the space bar, for every punch you throw</p>
+          <p class="run-hint" id="run-hint">Tap the circle<span class="kb">, or press the space bar,</span> for every punch you throw</p>
         </div>
 
         <!-- One ring per punch the drill asks for, filled by the block you are
@@ -2251,7 +2163,7 @@
              gets two rings and nothing here has to be kept in step by hand. -->
         <div class="rings" id="run-rings" hidden></div>
         <!-- Directly under the rings, because it is about them. -->
-        <p class="rings-note" id="run-rings-note" hidden>A ring fills from the block you are in. While the drill is asking for a jab, every punch the wraps hear is a jab, which is how the recording gets its labels.</p>
+        <p class="rings-note" id="run-rings-note" hidden>While the drill is asking for a jab, every punch the wraps hear is a jab, which is how the recording gets its labels.</p>
         <p aria-live="polite" class="sr-only" id="run-say"></p>
 
         <div class="run-metrics" id="run-metrics">
