@@ -497,7 +497,7 @@
 
        What this costs is that anything which does not fit is not reachable, so
        the two screens with something to do on them are laid out to a height
-       budget, and the one screen that genuinely cannot fit, the six drills,
+       budget, and the one screen that genuinely cannot fit, the eight drills,
        carries its own scroll inside its own box. */
     html, body { height: 100%; overflow: hidden; }
 
@@ -692,7 +692,7 @@
     .pane:focus, .pane:focus-visible { outline: none; }
 
     /* The two panes that carry their own scroll, and the only scrolling left on
-       the page. The programme is six drills with a block-by-block clock in each
+       the page. The programme is eight drills with a block-by-block clock in each
        and there is no width or type size at which that fits a window, so it
        scrolls inside its own box with the name held still above it. The profile
        does not need this on a laptop and has it for the narrow case, where the
@@ -1047,7 +1047,7 @@
 
     /* ── BEAT 7 — THE PROGRAMME ─────────────────────────────── */
     /* Two columns: the wraps down the left at about 30% of the width, and the
-       six drills as cards. The device panel is on this screen rather than on
+       eight drills as cards. The device panel is on this screen rather than on
        one of its own because being connected is not a step with a start and an
        end. It is a thing that is either true or not while you are looking at
        the drills, and it belongs beside them where it can say so.
@@ -1067,17 +1067,11 @@
        reading of two objects beside them. */
     .prog-main { grid-column: 2; grid-row: 1; min-width: 0; }
     .connect { grid-column: 1; grid-row: 1; }
-    .prog-h {
-      font-size: clamp(21px, 2.4vw, 26px); font-weight: 600;
-      letter-spacing: -0.018em;
-    }
-    .prog-b {
-      margin-top: 10px; max-width: 62ch;
-      font-size: var(--text-body-sm); letter-spacing: var(--tracking-body-sm);
-      color: var(--ash);
-    }
+    /* There is no heading rule and no body rule for this column. The screen is
+       the cards, with the pilot's name above them as its heading and nothing
+       under them but the privacy note. */
 
-    /* Six cards, two across. A card rather than a row because each one is a
+    /* Eight cards, two across. A card rather than a row because each one is a
        thing you are going to do once, on its own, on a different day: a row in
        a list reads as a line item in a plan you read top to bottom. */
     .drill-grid {
@@ -1142,10 +1136,6 @@
       font-size: var(--text-caption); letter-spacing: var(--tracking-caption);
       color: var(--ash);
     }
-    /* The programme column is left-aligned, so its actions are too. A centred
-       pair of buttons under a left-aligned column reads as belonging to the
-       whole screen rather than to the column. */
-    .prog-main .hub-nav { justify-content: flex-start; }
     @media (max-width: 1040px) {
       .prog { grid-template-columns: 1fr; max-width: 720px; }
       /* One column, so the placement goes and the source order is the order:
@@ -1153,10 +1143,10 @@
       .prog-main, .connect { grid-column: 1; grid-row: auto; }
       .connect { position: static; }
     }
-    /* Two across on a phone as well. Six drills in one column is a list four
+    /* Two across on a phone as well. Eight drills in one column is a list five
        screens long that has to be scrolled to be counted, and the count is the
        first thing a pilot wants from this screen: the programme is a fixed set of
-       seven things, not a feed. What gives way instead is the card's own layout,
+       eight things, not a feed. What gives way instead is the card's own layout,
        because at 390px a card is about 170px wide and a 46px diagram beside the
        title leaves the title 110px, which is two words a line. The diagram goes
        on top of the title, where it is still the first thing seen. */
@@ -2095,9 +2085,9 @@
     </section>
 
     <!-- ── THE PROGRAMME ───────────────────────────────────────────
-         Six drills, twelve minutes each, and they are not a training plan. They
-         are a labelled dataset being collected by a person instead of a rig,
-         which is why they look the way they do:
+         Eight drills, twelve minutes each bar the one-minute test, and they are
+         not a training plan. They are a labelled dataset being collected by a
+         person instead of a rig, which is why they look the way they do:
 
            · one punch at a time before any combination, because a block where
              only one thing happens is a block where every window in it has a
@@ -2114,6 +2104,9 @@
            · a whole drill of things that are not punches, including the pair
              that matter most: the resting hand while the other one works, and
              a hand that goes out and comes back with nothing behind it;
+           · the same punches again with somebody exhausted behind them, because
+             every other drill in here is thrown rested and almost nothing in a
+             gym is, and a tired punch is a different shape;
            · one drill deliberately unlabelled and held back, because a score
              on data you trained on is not a score.
 
@@ -2130,7 +2123,7 @@
       <div class="prog">
         <div class="prog-main">
           <!-- No heading and no standfirst. There was a "Your programme." over a
-               paragraph explaining what the seven cards are for, and the cards
+               paragraph explaining what the eight cards are for, and the cards
                say it: each one carries its own title, where it is done and how
                long it takes. The pilot's name is already the heading of this
                screen, and a screen asked to be the drills and nothing else does
@@ -2139,18 +2132,23 @@
                worth restarting twelve minutes for, moved to the drill's own ready
                screen: see openRun. -->
 
-          <!-- Above the cards, not inside them: it is one fact about all seven,
+          <!-- Above the cards, not inside them: it is one fact about all eight,
                and it is the reason they are greyed out, which has to be readable
                before the thing it explains. -->
           <p class="drill-lock" id="drill-lock" hidden></p>
           <div class="drill-grid" id="drill-grid"></div>
 
-          <p class="prog-b" id="band-note"></p>
-
-          <div class="hub-nav">
-            <a class="btn-glass" href="mailto:pilots@impktband.com?subject=Test%20pilot%20drills">Ask us anything</a>
-            <button class="btn-plain" type="button" id="back-to-setup">Change your details</button>
-          </div>
+          <!-- Nothing under the grid but the privacy note. There was a paragraph
+               about wearing a wrap on each hand and a pair of buttons, one asking
+               us anything and one back to the profile. The paragraph explained
+               why the drills keep asking for a hand that does nothing, which is
+               a thing the drill that does it can say when it does it. The two
+               buttons were a footer on the one screen with eight actions already
+               on it, and the mail link is on the briefing this screen arrives
+               from. Going back to the profile is the Profile tab in the app. On
+               the website it is a reload, which lands on the briefing and walks
+               forward to the profile the way it did the first time, and that is
+               worth knowing: this screen is now a one-way door. -->
           <p class="setup-note">
             Your profile stays on this device and nothing is sent while you fill
             it in. When you finish a drill, that drill goes to our database and
@@ -3123,7 +3121,7 @@
   });
 
   /* ── 6. THE PROGRAMME ─────────────────────────────────
-     Six drills as data rather than markup, because that is what they are: a
+     Eight drills as data rather than markup, because that is what they are: a
      collection protocol, with a label on every block and a running clock. It
      renders from the profile, so a southpaw reads "right hook" where an
      orthodox fighter reads "left hook" and nobody has to translate mid-round.
@@ -3269,7 +3267,7 @@
       guided: true, secs: 720, rounds: true,
       why: 'Three normal rounds on the bag, nothing called, no tempo. This one is '
          + 'never used to train anything: it is kept aside and used to check whether '
-         + 'what the other five drills taught actually works on a real round. A score '
+         + 'what the other six drills taught actually works on a real round. A score '
          + 'measured on data a model was trained on is not a score.',
       blocks: [
         ['0:00', 'Guard. Still. Start the recording before you start the round.', 'idle', 'neg'],
@@ -3278,6 +3276,40 @@
         ['5:00', '<b>Round two.</b> Three minutes.', 'held_back', 'hit'],
         ['8:00', 'Rest.', 'idle', 'neg'],
         ['9:00', '<b>Round three.</b> Three minutes. Drill ends.', 'held_back', 'hit']
+      ]
+    },
+    {
+      n: '07', t: 'The same punches, tired', where: 'Heavy bag · 12 min',
+      /* The one drill whose work blocks are not the point. The three flat-out
+         blocks are collected, because they are punches into a bag and there is no
+         reason to throw data away, but they are labelled free: nothing in them is
+         prompted and nothing about them is clean. What they are for is the state
+         the pilot is in by the block after them.
+
+         The last twenty seconds are worth as much as any of it and are easy to
+         read as a closing block like every other drill's. They are not: somebody
+         out of breath with their hands down is a negative no other drill in here
+         collects, because nobody in the other seven is out of breath. */
+      guided: true, secs: 720,
+      why: 'Every punch in the other seven drills is thrown by somebody rested, '
+         + 'because each one starts from zero and has a guard block whenever it '
+         + 'needs one. Almost nothing in a gym is. A tired jab is shorter, slower '
+         + 'and arrives without the snap at the end, and wraps that have only seen '
+         + 'fresh punches stop counting at the point in a round where somebody most '
+         + 'wants to be counted. The flat-out blocks are not collected for their own '
+         + 'sake: they are how you get tired enough for the blocks after them to be '
+         + 'worth having.',
+      blocks: [
+        ['0:00', 'Guard. Still. Breathe.', 'idle', 'neg'],
+        ['0:30', '<b>Flat out</b> on the bag for two minutes. Anything you like, as hard as you like, and do not pace yourself. This block is not being asked for anything: it is here to make you tired.', 'free_hard', 'hit'],
+        ['2:30', '<b>Jab</b> into the bag, {l} hand. One every three seconds. No rest first, and do not wait to get your breath back.', 'jab', 'hit', 3],
+        ['3:50', '<b>Cross</b> into the bag, {r} hand. One every three seconds. Still no rest.', 'cross', 'hit', 3],
+        ['5:10', '<b>Flat out</b> again, two minutes. Harder than the first one if there is anything left.', 'free_hard', 'hit'],
+        ['7:10', '<b>{L} hook</b> into the bag. One every three seconds, straight off the back of that.', 'hook_lead', 'hit', 3],
+        ['8:25', '<b>{R} hook</b> into the bag. Same tempo.', 'hook_rear', 'hit', 3],
+        ['9:40', '<b>Flat out</b>, one last minute. Everything you have.', 'free_hard', 'hit'],
+        ['10:40', '<b>Jab</b> into the bag, one every three seconds, for a full minute. Miss the beat rather than stopping, and let them be as bad as they are.', 'jab', 'hit', 3],
+        ['11:40', 'Hands down. Stand still and get your breath back. Drill ends.', 'idle', 'neg']
       ]
     }
   ];
@@ -3308,7 +3340,12 @@
         + '<path class="g" d="M16 17H4"/><path class="g" d="M7 14l-3 3 3 3"/>',
     /* Three rounds on a clock, nothing called. */
     '06': '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2"/>'
-        + '<path class="g" d="M9 3h6"/>'
+        + '<path class="g" d="M9 3h6"/>',
+    /* The bag again, and a punch arriving at it with nothing left in it: the same
+       two strokes as 03 with the arm sagging on the way, which is the difference
+       between the two drills. */
+    '07': '<path d="M3 7q5 2 9 7"/><path d="M8.5 12.5l3.5 1.5-1.5-3.5"/>'
+        + '<path class="g" d="M18 3v3"/><rect class="g" x="14" y="6" width="8" height="14" rx="4"/>'
   };
 
   /* A switch-hitter has no fixed lead, so the words stay abstract for them
@@ -3325,26 +3362,14 @@
       .replace(/\{l\}/g, lead.toLowerCase()).replace(/\{r\}/g, rear.toLowerCase());
   }
 
+  /* Nothing here but the cards. There was a paragraph under them saying that both
+     hands are wrapped and that the resting one is the cleanest negative we get,
+     which is true and is the reason the drills keep asking for a hand that does
+     nothing. It is also a thing the drill that asks can say when it asks: drill 05
+     says it in its own why, and the one part of it that was advice rather than
+     explanation, what a switch-hitter should read "lead" as, moved to openRun. */
   function renderDrills() {
-    const p = profile();
-    const say = sayFor(p);
-
-    /* Both hands are wrapped, so nothing here depends on which side anything is
-       on. What does need saying is what that buys, because it is the reason the
-       drills keep asking for a hand that does nothing: at any moment one wrap is
-       throwing and the other is not, and the one that is not is the cleanest
-       example of nothing we will ever get. */
-    $('band-note').innerHTML = p.stance === 'switch'
-      ? `You wear a wrap on each hand, so every punch is recorded by the hand that `
-        + `threw it and the other hand is recording what nothing looks like. You `
-        + `switch stance, so lead and rear move with your feet. Where a drill says `
-        + `lead or rear, read it as whichever hand is in front at the time, and keep `
-        + `the stance the same for the whole block.`
-      : `You wear a wrap on each hand, so every punch is recorded by the hand that `
-        + `threw it and nothing has to be guessed at from the other arm. That is also `
-        + `why the drills keep asking you to hold one hand still: a resting wrap is `
-        + `the cleanest example of what a punch is not, and it is the false positive `
-        + `we most need them to learn.`;
+    const say = sayFor(profile());
 
     /* The card carries the diagram, the title, where and how long, and one
        action. Everything else about a drill lives on the drill's own screen,
@@ -4526,7 +4551,7 @@
      times turned into a start and an end, so the timeline on screen and the
      thing driving the clock are the same list and cannot disagree.
 
-     All seven are guided now, and guided means different things in different
+     All eight are guided now, and guided means different things in different
      ones, which is the drill's business and not the engine's: where a block has a
      tempo it asks for each punch and waits for it, where it has none it is a
      clock with cues on it, and drill 06 gets a bell because it is three real
@@ -4600,7 +4625,8 @@
 
   function openRun(d) {
     endRun();
-    const say = sayFor(profile());
+    const p = profile();
+    const say = sayFor(p);
     RUN.d = d;
     RUN.punches = 0; RUN.idx = -1; RUN.beat = -1; RUN.done = false;
     RUN.rep = null; RUN.last = null; RUN.iCue = 0; RUN.iGo = 0;
@@ -4680,12 +4706,22 @@
     $('run-head').textContent = d.guided
       ? (d.secs <= 120 ? 'One minute.' : asClock(RUN.total).replace(':00', ' minutes.'))
       : 'Not guided yet.';
+    /* A switch-hitter has no fixed lead, so sayFor gives them "lead" and "rear"
+       where everybody else gets a hand, and that needs one sentence of explaining.
+       It goes on the drill that says it, a second before it says it, and only on
+       the drills that say it: it used to be a paragraph over the grid that every
+       pilot read whether it applied to them or not. */
+    const swap = p.stance === 'switch' && d.blocks.some(b => /\{[LRlr]\}/.test(b[1]))
+      ? ' You switch stance, so lead and rear move with your feet: read them as '
+        + 'whichever hand is in front at the time, and keep the same stance for a '
+        + 'whole block rather than changing it mid-way.'
+      : '';
     /* Why this drill exists, and then the one line the drills screen used to
        carry above the cards, moved to the screen it applies to and read a second
        before it is needed rather than four screens earlier. Only on a guided
        drill: it is about getting a rep wrong, and a drill with no reps in it yet
        cannot have one. */
-    $('run-cue').innerHTML = say(d.why) + (d.guided
+    $('run-cue').innerHTML = say(d.why) + swap + (d.guided
       ? ' If you throw the wrong punch or lose the tempo, carry on rather than '
         + 'starting again: five mislabelled seconds cost us nothing and a '
         + 'restarted drill costs twelve minutes.'
@@ -5724,8 +5760,6 @@
     renderDrills();
     show(drills);
   });
-
-  $('back-to-setup').addEventListener('click', () => show(setup));
 
   /* Anything already saved comes back into the controls, so a pilot who returns
      is editing their profile rather than re-entering it. */
