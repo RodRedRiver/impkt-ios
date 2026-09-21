@@ -184,13 +184,15 @@ struct LeaderboardView: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
 
-                figure(board.last?.kilos, quiet: board.last == nil)
+                figure(board.last?.power, speed: board.last?.speed,
+                       quiet: board.last == nil)
 
                 if turn.best > 0 {
                     VStack(spacing: 6) {
-                        Text("Best of this turn, \(turn.best) kg")
+                        Text("Best of this turn, \(turn.best)")
                             .font(.subheadline.weight(.medium))
                         chase(turn)
+                        hands(turn.balance)
                     }
                 } else {
                     Text("Hit the bag. Every punch shows up here and the hardest one is "
@@ -203,7 +205,7 @@ struct LeaderboardView: View {
                     editing = false
                     board.finish()
                 } label: {
-                    Text(turn.best > 0 ? "Done, put \(turn.best) kg on the board"
+                    Text(turn.best > 0 ? "Done, put \(turn.best) on the board"
                                        : "Done")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -230,7 +232,7 @@ struct LeaderboardView: View {
             VStack(spacing: 5) {
                 ProgressView(value: Double(turn.best), total: Double(target))
                     .tint(.impktRed)
-                Text("\(target - turn.best) kg off \(chaseWho(turn))")
+                Text("\(target - turn.best) off \(chaseWho(turn))")
                     .font(.caption).foregroundColor(.secondary)
             }
         }
@@ -249,7 +251,7 @@ struct LeaderboardView: View {
             VStack(spacing: 14) {
                 Text("Who threw that?")
                     .font(.headline)
-                figure(waiting.kilos, quiet: false)
+                figure(waiting.power, speed: waiting.speed, quiet: false)
                 Text("Tap a name and it counts for them, and they stay up for the rest of "
                    + "their turn.")
                     .font(.caption).foregroundColor(.secondary)
@@ -272,7 +274,7 @@ struct LeaderboardView: View {
                         .font(.caption.weight(.medium))
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
-                    figure(leader.best, quiet: false)
+                    figure(leader.best, speed: leader.bestSpeed, quiet: false)
                     Label(leader.name, systemImage: "crown.fill")
                         .font(.subheadline.weight(.semibold))
                         .foregroundColor(.impktRed)
@@ -290,20 +292,72 @@ struct LeaderboardView: View {
         }
     }
 
-    /// The big figure. One number, in kilograms, and nothing next to it that qualifies it.
-    private func figure(_ kilos: Int?, quiet: Bool) -> some View {
-        HStack(alignment: .lastTextBaseline, spacing: 6) {
-            Text(kilos.map { "\($0)" } ?? "0")
-                .font(.system(size: 80, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .foregroundColor(quiet ? Color.secondary.opacity(0.35) : .impktRed)
-            Text("kg")
-                .font(.system(size: 22, weight: .medium, design: .rounded))
-                .foregroundColor(.secondary)
+    /// The big figure. One number and nothing next to it that qualifies it.
+    ///
+    /// Labelled power, not kilograms. The board's number is how hard the hand was
+    /// accelerating blended with how fast it was moving, both measured at the wrap, and
+    /// a kilogram would be claiming a conversion to force at the glove that nothing in
+    /// this system measures. Power is what it is.
+    ///
+    /// Hand speed goes underneath when there is one, small. It is the second thing
+    /// anybody asks after the number, it needs no explaining, and it is the one figure
+    /// here that is a plain physical measurement in its own units.
+    private func figure(_ power: Int?, speed: Double? = nil, quiet: Bool) -> some View {
+        VStack(spacing: 2) {
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(power.map { "\($0)" } ?? "0")
+                    .font(.system(size: 80, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .foregroundColor(quiet ? Color.secondary.opacity(0.35) : .impktRed)
+                Text("power")
+                    .font(.system(size: 20, weight: .medium, design: .rounded))
+                    .foregroundColor(.secondary)
+            }
+            if let speed, speed > 0 {
+                Text(String(format: "%.1f m/s at the hand", speed))
+                    .font(.caption).foregroundColor(.secondary)
+                    .monospacedDigit()
+            }
         }
         .scaleEffect(pulse)
         .animation(.spring(response: 0.28, dampingFraction: 0.5), value: pulse)
+    }
+
+    /// Left against right, which is the thing Sofia asked for in a percentage.
+    ///
+    /// A bar split at the share of the two bests, the harder hand named, and by how much.
+    /// Nothing when only one hand has landed something: see `Balance`.
+    @ViewBuilder private func hands(_ balance: Balance?) -> some View {
+        if let b = balance {
+            VStack(spacing: 6) {
+                GeometryReader { geo in
+                    HStack(spacing: 2) {
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(b.strong == .left ? Color.impktRed
+                                                    : Color.impktRed.opacity(0.28))
+                            .frame(width: max(3, (geo.size.width - 2) * b.leftShare))
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(b.strong == .right ? Color.impktRed
+                                                     : Color.impktRed.opacity(0.28))
+                    }
+                }
+                .frame(height: 8)
+
+                HStack {
+                    Text("Left \(b.left)")
+                    Spacer(minLength: 8)
+                    Text("\(b.strong.word) \(b.percent)% harder")
+                        .fontWeight(.semibold)
+                        .foregroundColor(.impktRed)
+                    Spacer(minLength: 8)
+                    Text("Right \(b.right)")
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+            }
+        }
     }
 
     // MARK: - putting a name up
@@ -393,16 +447,15 @@ struct LeaderboardView: View {
                 Text(boxer.name)
                     .font(.subheadline.weight(place == 1 ? .semibold : .regular))
                     .lineLimit(1)
-                Text(boxer.punches == 1 ? "1 punch" : "\(boxer.punches) punches")
+                Text(rowNote(boxer))
                     .font(.caption2).foregroundColor(.secondary)
+                    .lineLimit(1)
             }
             Spacer(minLength: 8)
             Text("\(boxer.best)")
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundColor(place == 1 ? .impktRed : .primary)
-            Text("kg")
-                .font(.caption2).foregroundColor(.secondary)
         }
         .padding(.vertical, 9)
         .contentShape(Rectangle())
@@ -414,6 +467,22 @@ struct LeaderboardView: View {
                 Label("Take \(boxer.name) off the board", systemImage: "trash")
             }
         }
+    }
+
+    /// The second line of a row. Punch count always, then whatever else there is room
+    /// for: the hand split when both hands have thrown, and the speed of the best punch.
+    ///
+    /// One line and not three. A row is read from four feet away by somebody deciding
+    /// whether to argue, and the number on the right is what they are arguing about.
+    private func rowNote(_ boxer: Boxer) -> String {
+        var parts = [boxer.punches == 1 ? "1 punch" : "\(boxer.punches) punches"]
+        if let b = boxer.balance {
+            parts.append("\(b.strong.word.lowercased()) +\(b.percent)%")
+        }
+        if boxer.bestSpeed > 0 {
+            parts.append(String(format: "%.1f m/s", boxer.bestSpeed))
+        }
+        return parts.joined(separator: "  ·  ")
     }
 
     /// The top three get a filled disc and the rest get their number. Three, because a
@@ -439,8 +508,10 @@ struct LeaderboardView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Kilograms of force, off the band on the hand that threw it. One band is "
-               + "enough: put the next name up and hand it over.")
+            Text("Power, measured at the band on the hand that threw it, with hand speed "
+               + "underneath it. One band is enough: put the next name up and hand it over.")
+            Text("Left against right needs both wraps to have landed something. Once they "
+               + "have, the bar splits at the two best punches and names the harder hand.")
             Text("The board is this phone's and stays on it. Nothing here goes over the "
                + "internet, and starting a new board is the only thing that clears it. "
                + "Standing since \(started).")

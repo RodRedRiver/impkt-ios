@@ -36,6 +36,12 @@ final class WrapCentral: NSObject, ObservableObject {
     /// subscription of its own. See `lastPunch`.
     static let punchData     = CBUUID(string: "6e2a0002-b5a3-f393-e0a9-e50e24dcca9e")
     static let punchScore    = CBUUID(string: "6e2a0003-b5a3-f393-e0a9-e50e24dcca9e")
+    /// Identity: which hand this wrap is on, and which pair it belongs to. Read by the
+    /// page when it brings a wrap up, which is the only reason this is here: the read
+    /// passes through this object on its way back, so the hand can be learned by
+    /// watching rather than by asking the wrap a second time on a link somebody else
+    /// owns. See `hands`.
+    static let punchIdent    = CBUUID(string: "6e2a0009-b5a3-f393-e0a9-e50e24dcca9e")
     /// Nordic's legacy DFU service, which is what the Adafruit bootloader and the
     /// running firmware both speak. Its presence on a connected wrap is the proof
     /// that an over-the-air update will be accepted.
@@ -94,6 +100,20 @@ final class WrapCentral: NSObject, ObservableObject {
     /// Every punch is a new value, so this can be observed as a stream: the record
     /// carries a sequence number and the struct stamps its own identity and time.
     @Published private(set) var lastPunch: Punch?
+
+    /// Which hand each wrap is on, learned by watching the page read the identity
+    /// characteristic.
+    ///
+    /// Not from the advertised name, although the hand is in it: a board that has been
+    /// given a label of its own advertises the label INSTEAD of the derived
+    /// "BOXING-01L", so the name is right until somebody names a wrap and then it is
+    /// silently wrong. The identity characteristic is the board answering the question
+    /// directly, and the page reads it on every wrap it brings up.
+    ///
+    /// Empty until that read lands, which is a second or two after a connection. Punches
+    /// in that window are counted with an unknown hand rather than being held back or
+    /// guessed at.
+    @Published private(set) var hands: [UUID: Hand] = [:]
 
     /// Set by the web view: (event name, payload) delivered into the page.
     var emit: ((String, [String: Any]) -> Void)?
@@ -801,6 +821,17 @@ extension WrapCentral: CBPeripheralDelegate {
             // page is told about it either way: a value that answered a read is
             // still a new value, and the page's own handler expects to see it.
         }
+        // Outside the notifying gate below, because identity is only ever read, never
+        // subscribed to. Byte 1 of the record is 'L', 'R', or zero for a wrap that has
+        // not been told which hand it is on.
+        if c.uuid == WrapCentral.punchIdent, data.count >= 2 {
+            switch data[data.startIndex + 1] {
+            case UInt8(ascii: "L"): hands[p.identifier] = .left
+            case UInt8(ascii: "R"): hands[p.identifier] = .right
+            default: break
+            }
+        }
+
         guard c.isNotifying else { return }
         // Inside the notifying gate on purpose. The punch characteristic can be READ as
         // well as subscribed to, and what a read returns is the newest punch the board
@@ -808,7 +839,10 @@ extension WrapCentral: CBPeripheralDelegate {
         // somebody threw yesterday. Counting one of those onto a leaderboard would put
         // a number against a name that was not in the room.
         if c.uuid == WrapCentral.punchData {
-            if let punch = Punch.record(data), !punch.replay { lastPunch = punch }
+            if var punch = Punch.record(data), !punch.replay {
+                punch.hand = hands[p.identifier] ?? .unknown
+                lastPunch = punch
+            }
         } else if c.uuid == WrapCentral.punchScore {
             // Only when the record is not coming. A wrap with both would otherwise
             // report every punch twice, once as a record and once as a score, and the
@@ -816,7 +850,10 @@ extension WrapCentral: CBPeripheralDelegate {
             let rich = (p.services ?? []).contains { s in
                 (s.characteristics ?? []).contains { $0.uuid == WrapCentral.punchData }
             }
-            if !rich, let punch = Punch.bareScore(data) { lastPunch = punch }
+            if !rich, var punch = Punch.bareScore(data) {
+                punch.hand = hands[p.identifier] ?? .unknown
+                lastPunch = punch
+            }
         }
         emit?("notify", ["device": p.identifier.uuidString,
                          "characteristic": c.uuid.uuidString.lowercased(),

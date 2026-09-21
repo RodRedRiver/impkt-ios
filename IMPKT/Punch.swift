@@ -1,5 +1,26 @@
 import Foundation
 
+/// Which wrap a punch came off.
+///
+/// The product is a pair and both hands are always instrumented, so this is never a
+/// question put to anybody: the wrap knows, and it says so in the identity
+/// characteristic. `unknown` is for a punch that arrived before that read landed, or
+/// off a board too old to have an identity at all, and it is counted on the board but
+/// left out of the left against right split rather than guessed into one side of it.
+enum Hand: String, Codable {
+    case left = "L", right = "R", unknown = "?"
+
+    var word: String {
+        switch self {
+        case .left:    return "Left"
+        case .right:   return "Right"
+        case .unknown: return "Unknown"
+        }
+    }
+
+    var other: Hand { self == .left ? .right : .left }
+}
+
 /// One punch, as the wrap reports it, plus the one number a gym wants off it.
 ///
 /// The record is the firmware's `punch_packet_t`, twenty bytes, little endian, fixed
@@ -15,7 +36,7 @@ struct Punch: Identifiable, Equatable {
     /// speed. Kept because it is what the page shows and the two screens should not
     /// disagree about the same punch.
     let score: Double
-    /// Peak linear acceleration, in g, gravity already removed.
+    /// Peak linear acceleration, in g, gravity already removed. Stops at the rail.
     let peakG: Double
     /// Peak raw acceleration magnitude, in g, gravity still in it.
     let rawG: Double
@@ -27,8 +48,17 @@ struct Punch: Identifiable, Equatable {
     let window: Double
     /// Samples that reached the top of the accelerometer's range.
     let railed: Int
+    /// The peak the firmware built its score from, in g. On v2.21 and later this is the
+    /// reconstructed peak when the punch went off the top of the scale and a copy of
+    /// `peakG` when it did not. Zero from anything older, which had a punch count here.
+    let builtPeak: Double
     let seq: Int
     let flags: Int
+
+    /// Which wrap threw it. Filled in by `WrapCentral`, which is the only thing that
+    /// knows: the hand is a property of the board, not of the punch, so it is not in
+    /// the packet and there is no room for it there anyway.
+    var hand: Hand = .unknown
 
     /// A punch thrown while the link was down, arriving late.
     ///
@@ -39,6 +69,10 @@ struct Punch: Identifiable, Equatable {
     /// earn its number.
     var replay: Bool { flags & 0x04 != 0 }
 
+    /// The board rebuilt the top of this punch's curve, so `score` and `builtPeak` are
+    /// the reconstruction and not the rail. Firmware v2.21 and later.
+    var rebuilt: Bool { flags & 0x08 != 0 }
+
     // MARK: - reading the wire
 
     /// The twenty byte record. Nil for anything shorter, which is not this packet.
@@ -47,15 +81,20 @@ struct Punch: Identifiable, Equatable {
         let u16: (Int) -> Int = { at in
             Int(data[data.startIndex + at]) | Int(data[data.startIndex + at + 1]) << 8
         }
-        return Punch(score:  Double(u16(2)) / 10,
-                     peakG:  Double(u16(4)) / 1000,
-                     rawG:   Double(u16(6)) / 1000,
-                     speed:  Double(u16(8)) / 1000,
-                     spin:   Double(u16(10)),
-                     window: Double(u16(12)) / 1000,
-                     railed: u16(14),
-                     seq:    u16(0),
-                     flags:  Int(data[data.startIndex + 16]))
+        // Offset 18 held a punch count up to v2.20, which was the same number as seq at
+        // offset 0, so a board on the old firmware puts a punch count in builtPeak.
+        // Nothing reads builtPeak unless `rebuilt` is set, and that flag bit did not
+        // exist before the field did.
+        return Punch(score:     Double(u16(2)) / 10,
+                     peakG:     Double(u16(4)) / 1000,
+                     rawG:      Double(u16(6)) / 1000,
+                     speed:     Double(u16(8)) / 1000,
+                     spin:      Double(u16(10)),
+                     window:    Double(u16(12)) / 1000,
+                     railed:    u16(14),
+                     builtPeak: Double(u16(18)) / 1000,
+                     seq:       u16(0),
+                     flags:     Int(data[data.startIndex + 16]))
     }
 
     /// The four byte float on the score characteristic, which is all a wrap older than
@@ -65,14 +104,14 @@ struct Punch: Identifiable, Equatable {
     /// The page already falls back to this characteristic when the record is missing,
     /// and a board that punches into a screen that stays empty is the hardest kind of
     /// fault to report from a gym floor. Every field but the score is unknown, and
-    /// unknown is written as zero rather than guessed at: `kilos` branches on it.
+    /// unknown is written as zero rather than guessed at: `power` branches on it.
     static func bareScore(_ data: Data) -> Punch? {
         guard data.count >= 4 else { return nil }
         let bits = data.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
         let score = Double(Float(bitPattern: UInt32(littleEndian: bits)))
         guard score.isFinite, score > 0 else { return nil }
         return Punch(score: score, peakG: 0, rawG: 0, speed: 0, spin: 0,
-                     window: 0, railed: 0, seq: 0, flags: 0)
+                     window: 0, railed: 0, builtPeak: 0, seq: 0, flags: 0)
     }
 }
 
@@ -80,70 +119,61 @@ struct Punch: Identifiable, Equatable {
 
 extension Punch {
 
-    /// Effective striking mass, in kilograms.
-    ///
-    /// A punch is not the mass of a hand. It is whatever the shoulder, the hips and the
-    /// back foot managed to put behind the hand at the moment of contact, and for a
-    /// committed straight punch that lands around a tenth of body mass. Eight kilograms
-    /// is the middle of that for an adult, and it is one number for everybody on
-    /// purpose: the board is one band passed down a line of people whose names are all
-    /// anyone has time to type, so a per person mass would be a number nobody entered.
-    static let strikingMass = 8.0
+    /// The firmware's own weights, repeated here for one reason only: a board too old to
+    /// rebuild a clipped peak has a score that cannot be trusted, and the rebuild below
+    /// has to land on the same scale as the boards that can, or a gym running one of each
+    /// would have two different ideas of what 90 means.
+    static let accelWeight = 4.0
+    static let velocityWeight = 6.0
 
     /// Where the part stops measuring, in g. The LSM6DS3TR is set to its widest range
-    /// and that range ends at 15.99 g.
+    /// and that range ends at 15.99 g. There is no wider setting on this part.
     static let rail = 16.0
 
     /// Accelerometer sample rate during a punch, in hertz. Set in the firmware's
     /// CTRL1_XL, and the only way `railed` becomes a length of time.
     static let sampleRate = 833.0
 
-    /// Nominal rise rate of the acceleration curve, in g per second.
-    ///
-    /// A punch ramps to the rail in about five milliseconds, which is this. It is the
-    /// term the recovery below is built on, and see that comment for why a rate is what
-    /// it takes.
+    /// Nominal rise rate of the acceleration curve, in g per second, and the reference
+    /// speed it is quoted at. Only the old-firmware path uses these. See `peak`.
     static let nominalRamp = 3200.0
-
-    /// The reference hand speed the ramp is quoted at, in metres per second, and the
-    /// band the scaling is held inside. A faster hand ramps harder, but not without
-    /// limit, and a wrap that reports no speed at all must not scale the ramp to zero.
     static let referenceSpeed = 6.0
     static let rampRange = 0.6 ... 1.8
 
-    /// Kilograms of force. The number on the board and the only one on screen.
-    var kilos: Int {
-        // The old score-only path. Nothing in the field is on that firmware, and the
-        // constant is the ratio the two models agree on for a punch at the rail thrown
-        // at the reference speed, so a gym running one old band and one new one gets
-        // one scale rather than two.
-        if peakG == 0 && score > 0 { return Int((score * 1.3).rounded()) }
-        return Int((Punch.strikingMass * peak).rounded())
+    /// Power. The number on the board and the headline on the screen.
+    ///
+    /// Unitless on purpose. It is the firmware's own blend of how hard the hand was
+    /// accelerating and how fast it was moving, which is a real measurement of a real
+    /// punch, and putting a kilogram on it would be claiming a conversion to force at
+    /// the glove that nothing here measures.
+    ///
+    /// Almost always straight off the board, because the board is the thing holding the
+    /// samples. The exception is a punch that went off the top of the accelerometer's
+    /// range on firmware older than v2.21, where the score was built from a peak pinned
+    /// to the rail and is therefore too low by an amount that grows with how hard the
+    /// punch was. That is the one case worth second-guessing the board about, and `peak`
+    /// is how.
+    var power: Int {
+        if rebuilt || railed == 0 { return Int(score.rounded()) }
+        return Int((Punch.accelWeight * peak + Punch.velocityWeight * speed).rounded())
     }
 
-    /// Peak acceleration in g, with the top of the curve put back on.
+    /// Peak acceleration in g: the board's own number when it has one, and otherwise the
+    /// top of the curve put back on here.
     ///
-    /// The part measures to 16 g and a thrown punch goes past that, so the samples at
-    /// the top of a hard one all read the same number and the peak alone cannot tell a
-    /// good punch from a great one. What still separates them is TIME: the harder the
-    /// punch, the longer its curve spends above the rail, and the firmware counts those
-    /// samples. So the peak is rebuilt from the rate of climb rather than read off the
-    /// top, which is the only thing the rate of climb is for here.
+    /// From v2.21 the firmware does this itself and does it better, because it has the
+    /// samples: it measures the rate the curve climbed onto the rail and the rate it came
+    /// off, extends both edges, and takes the crossing. Everything in that is measured
+    /// from the punch in hand. This version cannot be, because the only things that
+    /// survive into the packet are how long the curve sat on the rail and how fast the
+    /// hand was going, so the climb rate is a constant scaled by hand speed.
     ///
-    /// The curve rises at `ramp`, crosses the rail, turns over somewhere above it and
-    /// comes back down. Taking the top as a corner, it spends half its time above the
-    /// rail climbing and half falling, so the height it reached is the rail plus the
-    /// climb rate times half the time it was up there. The ramp itself is scaled by
-    /// hand speed, because a hand arriving faster loads the same tissue faster, and
-    /// speed is the one thing in this record that no rail can clip.
-    ///
-    /// This is a pilot model and it is meant to be replaced. What it has to be is
-    /// monotonic, which it is in both of its terms: no two punches of different
-    /// strengths can tie, and a harder one cannot score lower. Ranking a line of people
-    /// at a bag is the whole job, and this ranks them. Nothing on the screen hedges
-    /// about it, and that is deliberate too: a number with an apology attached is worse
-    /// than useless in a gym, and the consumer version gets the real model.
+    /// Kept for the boards that are still on 2.16 and 2.20. What it has to be is
+    /// monotonic, which it is in both of its terms: no two punches of different strengths
+    /// can tie, and a harder one cannot score lower. Ranking a line of people at a bag is
+    /// the whole job, and this ranks them.
     var peak: Double {
+        if rebuilt, builtPeak > 0 { return builtPeak }
         let base = max(peakG, rawG - 1)
         guard railed > 0 else { return base }
         let scale = min(max(speed / Punch.referenceSpeed, Punch.rampRange.lowerBound),

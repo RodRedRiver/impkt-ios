@@ -16,11 +16,86 @@ struct Boxer: Codable, Identifiable, Equatable {
     var id: String { name.lowercased() }
 
     var name: String
-    /// Kilograms of force, the best one.
+    /// Power, the best one.
     var best: Int
     var punches: Int
     /// When the best landed, not when the name was added. It is what a tie breaks on.
     var at: Date
+
+    /// The best from each hand, and how many each hand threw.
+    ///
+    /// Kept separately rather than derived, because `best` is the better of the two and
+    /// which hand it came off is exactly the thing being asked about. A hand with no
+    /// punches stays at zero and `Balance` refuses to compare it.
+    var bestLeft: Int = 0
+    var bestRight: Int = 0
+    var punchesLeft: Int = 0
+    var punchesRight: Int = 0
+    /// Hand speed of their best punch, in metres per second.
+    var bestSpeed: Double = 0
+
+    init(name: String, best: Int, punches: Int, at: Date,
+         bestLeft: Int = 0, bestRight: Int = 0,
+         punchesLeft: Int = 0, punchesRight: Int = 0, bestSpeed: Double = 0) {
+        self.name = name
+        self.best = best
+        self.punches = punches
+        self.at = at
+        self.bestLeft = bestLeft
+        self.bestRight = bestRight
+        self.punchesLeft = punchesLeft
+        self.punchesRight = punchesRight
+        self.bestSpeed = bestSpeed
+    }
+
+    /// Spelled out rather than synthesised so that a board written by the build before
+    /// this one still loads. The five fields below did not exist then, and the generated
+    /// decoder throws on a missing key rather than defaulting it, which would have
+    /// emptied a gym's standings at the moment they installed the update.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        name         = try c.decode(String.self, forKey: .name)
+        best         = try c.decode(Int.self,    forKey: .best)
+        punches      = try c.decode(Int.self,    forKey: .punches)
+        at           = try c.decode(Date.self,   forKey: .at)
+        bestLeft     = try c.decodeIfPresent(Int.self,    forKey: .bestLeft)     ?? 0
+        bestRight    = try c.decodeIfPresent(Int.self,    forKey: .bestRight)    ?? 0
+        punchesLeft  = try c.decodeIfPresent(Int.self,    forKey: .punchesLeft)  ?? 0
+        punchesRight = try c.decodeIfPresent(Int.self,    forKey: .punchesRight) ?? 0
+        bestSpeed    = try c.decodeIfPresent(Double.self, forKey: .bestSpeed)    ?? 0
+    }
+
+    var balance: Balance? { Balance.between(left: bestLeft, right: bestRight) }
+}
+
+/// How the two hands compare, which is what a coach looks at second, after the number.
+///
+/// Nil unless both hands have landed something. One hand on the board is not a
+/// nine-to-nothing split, it is a hand that has not had its turn, and a screen that
+/// says "your left is 100% harder" about a right hand that never threw would be
+/// reporting the app's own gap as the boxer's.
+struct Balance: Equatable {
+    /// The harder hand.
+    let strong: Hand
+    /// How much harder, as a percentage of the weaker hand. A left of 120 against a
+    /// right of 100 is 20: the left hits 20% harder.
+    let percent: Int
+    let left: Int
+    let right: Int
+
+    /// The left hand's share of the pair, for drawing a bar. 0.5 is level.
+    var leftShare: Double {
+        let total = left + right
+        return total > 0 ? Double(left) / Double(total) : 0.5
+    }
+
+    static func between(left: Int, right: Int) -> Balance? {
+        guard left > 0, right > 0 else { return nil }
+        let strong = left >= right ? Hand.left : .right
+        let high = max(left, right), low = min(left, right)
+        let pct = Int(((Double(high) / Double(low)) - 1) * 100)
+        return Balance(strong: strong, percent: pct, left: left, right: right)
+    }
 }
 
 /// The standings, and whose turn it is.
@@ -67,19 +142,31 @@ final class Leaderboard: ObservableObject {
 
     struct Turn: Equatable {
         var name: String
-        /// Kilograms, the best of this turn so far. Zero until the first punch.
+        /// Power, the best of this turn so far. Zero until the first punch.
         var best = 0
         var punches = 0
         var started = Date()
         /// What this name had on the board before the turn started, so the screen can say
         /// what there is to beat and know when it has been beaten.
         var previous = 0
+
+        /// This turn's hands. The split is shown live, because it is the one number on
+        /// the screen that a person can do something about while they are still standing
+        /// there: a right that is 30% down on the left is a reason to throw more rights.
+        var bestLeft = 0
+        var bestRight = 0
+        var punchesLeft = 0
+        var punchesRight = 0
+        /// Hand speed of the best punch of the turn, in metres per second.
+        var bestSpeed = 0.0
+
+        var balance: Balance? { Balance.between(left: bestLeft, right: bestRight) }
     }
 
     struct Moment: Equatable {
         let id = UUID()
         let kind: Kind
-        let kilos: Int
+        let power: Int
         enum Kind { case punch, personalBest, lead }
     }
 
@@ -115,15 +202,32 @@ final class Leaderboard: ObservableObject {
     }
 
     private func record(_ punch: Punch) {
-        let kilos = punch.kilos
+        let power = punch.power
         guard var t = turn else {
             held = punch
-            moment = Moment(kind: .punch, kilos: kilos)
+            moment = Moment(kind: .punch, power: power)
             return
         }
         t.punches += 1
-        let beat = kilos > t.best
-        if beat { t.best = kilos }
+        switch punch.hand {
+        case .left:
+            t.punchesLeft += 1
+            if power > t.bestLeft { t.bestLeft = power }
+        case .right:
+            t.punchesRight += 1
+            if power > t.bestRight { t.bestRight = power }
+        case .unknown:
+            // Counted in the total, left out of the split. A wrap whose identity has not
+            // been read yet is one that will be in a second or two, and putting its
+            // punches on a side at random is how a boxer ends up being told their left is
+            // stronger by an app that could not tell which hand it was looking at.
+            break
+        }
+        let beat = power > t.best
+        if beat {
+            t.best = power
+            t.bestSpeed = punch.speed
+        }
         turn = t
         last = punch
 
@@ -132,12 +236,12 @@ final class Leaderboard: ObservableObject {
         // outranks being the best of this turn, so the phone reacts once and reacts to
         // the biggest of them.
         let leader = board.first?.best ?? 0
-        if beat && kilos > leader && !isLeader(t.name) {
-            moment = Moment(kind: .lead, kilos: kilos)
-        } else if beat && kilos > t.previous && t.previous > 0 {
-            moment = Moment(kind: .personalBest, kilos: kilos)
+        if beat && power > leader && !isLeader(t.name) {
+            moment = Moment(kind: .lead, power: power)
+        } else if beat && power > t.previous && t.previous > 0 {
+            moment = Moment(kind: .personalBest, power: power)
         } else {
-            moment = Moment(kind: .punch, kilos: kilos)
+            moment = Moment(kind: .punch, power: power)
         }
     }
 
@@ -173,7 +277,7 @@ final class Leaderboard: ObservableObject {
         turn = nil
         last = nil
         guard t.punches > 0 else { return }
-        add(t.name, kilos: t.best, punches: t.punches)
+        add(t)
     }
 
     /// Answers the question on a held punch: this is who threw it, and they are still at
@@ -187,16 +291,32 @@ final class Leaderboard: ObservableObject {
 
     // MARK: - the board itself
 
-    private func add(_ name: String, kilos: Int, punches: Int) {
-        let key = name.lowercased()
+    /// Folds a finished turn into the standings. Takes the whole turn rather than a
+    /// handful of numbers, because there are nine of them now and a call site listing
+    /// nine arguments in the right order is a bug waiting for the tenth.
+    ///
+    /// Everything is a running maximum except the counts, which add. A second turn can
+    /// improve any of the four bests independently: somebody whose left was already on
+    /// the board comes back and beats it with their right, and both numbers should be the
+    /// best that hand has done all session.
+    private func add(_ t: Turn) {
+        let key = t.name.lowercased()
         if let i = board.firstIndex(where: { $0.id == key }) {
-            board[i].punches += punches
-            if kilos > board[i].best {
-                board[i].best = kilos
-                board[i].at = Date()
+            board[i].punches      += t.punches
+            board[i].punchesLeft  += t.punchesLeft
+            board[i].punchesRight += t.punchesRight
+            if t.bestLeft  > board[i].bestLeft  { board[i].bestLeft  = t.bestLeft }
+            if t.bestRight > board[i].bestRight { board[i].bestRight = t.bestRight }
+            if t.best > board[i].best {
+                board[i].best      = t.best
+                board[i].bestSpeed = t.bestSpeed
+                board[i].at        = Date()
             }
         } else {
-            board.append(Boxer(name: name, best: kilos, punches: punches, at: Date()))
+            board.append(Boxer(name: t.name, best: t.best, punches: t.punches, at: Date(),
+                               bestLeft: t.bestLeft, bestRight: t.bestRight,
+                               punchesLeft: t.punchesLeft, punchesRight: t.punchesRight,
+                               bestSpeed: t.bestSpeed))
         }
         // Best first, and the earlier of two equal bests ahead of the later one: the
         // person who set the number is in front of the person who matched it.
@@ -242,7 +362,11 @@ final class Leaderboard: ObservableObject {
     var asText: String {
         var lines = ["IMPKT, hardest punch"]
         for (i, b) in board.enumerated() {
-            lines.append("\(i + 1). \(b.name)  \(b.best) kg")
+            var line = "\(i + 1). \(b.name)  \(b.best) power"
+            if let bal = b.balance {
+                line += "  (\(bal.strong.word.lowercased()) \(bal.percent)% harder)"
+            }
+            lines.append(line)
         }
         return lines.joined(separator: "\n")
     }
