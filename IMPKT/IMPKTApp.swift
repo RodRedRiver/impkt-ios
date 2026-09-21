@@ -7,7 +7,15 @@ struct IMPKTApp: App {
     /// The bars are painted before the first screen exists, which is why this is in
     /// init and not in a view: an appearance proxy applies to bars created after it
     /// is set, and the tab bar is created with the first screen.
-    init() { IMPKTApp.paintTheBars() }
+    ///
+    /// The leaderboard starts listening here too, and for a related reason: it has to be
+    /// counting punches before anybody opens its tab. A gym connects the band on the Test
+    /// tab, and the punch thrown to check the band is awake is thrown there. A screen
+    /// that only starts counting when it is looked at would lose it.
+    init() {
+        IMPKTApp.paintTheBars()
+        Leaderboard.shared.listen()
+    }
 
     var body: some Scene {
         WindowGroup { RootView() }
@@ -73,9 +81,12 @@ extension View {
     }
 }
 
-/// Four tabs. The first one is the page, which is still the product; the other three
+/// Five tabs. The first one is the page, which is still the product; the other four
 /// are each a job the page cannot do from inside a web view.
 ///
+/// Leaderboard is one band, a queue of people and the hardest punch of the session,
+/// which is what a gym asks for within a minute of being handed a band and is a
+/// different shape from a drill: no profile, no plan, no recording, one name at a time.
 /// Update installs firmware over Bluetooth, which no browser can. Devices says what
 /// the phone can hear right now, which the page only shows while it happens to be
 /// looking for something. Profile says what is stored on this phone and what leaves
@@ -92,6 +103,9 @@ struct RootView: View {
             PilotPage()
                 .background(Color.pageCanvas)
                 .tabItem { Label("Test", systemImage: "figure.boxing") }
+
+            LeaderboardView()
+                .tabItem { Label("Leaderboard", systemImage: "trophy") }
 
             UpdateView()
                 .tabItem { Label("Update", systemImage: "arrow.down.circle") }

@@ -28,6 +28,14 @@ final class WrapCentral: NSObject, ObservableObject {
     static let shared = WrapCentral()
 
     static let punchService  = CBUUID(string: "6e2a0001-b5a3-f393-e0a9-e50e24dcca9e")
+    /// The twenty byte punch record, and the bare float score a wrap older than v2.2
+    /// offers instead of it.
+    ///
+    /// Named here because the Leaderboard tab reads the punches off the same
+    /// notifications the page is already subscribed to, rather than opening a second
+    /// subscription of its own. See `lastPunch`.
+    static let punchData     = CBUUID(string: "6e2a0002-b5a3-f393-e0a9-e50e24dcca9e")
+    static let punchScore    = CBUUID(string: "6e2a0003-b5a3-f393-e0a9-e50e24dcca9e")
     /// Nordic's legacy DFU service, which is what the Adafruit bootloader and the
     /// running firmware both speak. Its presence on a connected wrap is the proof
     /// that an over-the-air update will be accepted.
@@ -71,6 +79,21 @@ final class WrapCentral: NSObject, ObservableObject {
     /// page does when it looks for a wrap, and a screen does when it appears. So the
     /// flag refuses them for the duration rather than trusting every caller to ask.
     @Published private(set) var updating = false
+
+    /// The last punch any connected wrap reported, read off the notification on its way
+    /// past to the page.
+    ///
+    /// A tap and not a second subscription. The page connects the wraps and subscribes
+    /// to their punch characteristic, and a native screen that wanted its own link to
+    /// the same wrap would be the one thing a wrap refuses: it accepts exactly one
+    /// connection, and asking for a second is how a tab ends up staring at a board that
+    /// is working perfectly and talking to somebody else. So the record is parsed where
+    /// it already arrives and published, and both the page and the Leaderboard see every
+    /// punch with nothing competing for the radio.
+    ///
+    /// Every punch is a new value, so this can be observed as a stream: the record
+    /// carries a sequence number and the struct stamps its own identity and time.
+    @Published private(set) var lastPunch: Punch?
 
     /// Set by the web view: (event name, payload) delivered into the page.
     var emit: ((String, [String: Any]) -> Void)?
@@ -779,6 +802,22 @@ extension WrapCentral: CBPeripheralDelegate {
             // still a new value, and the page's own handler expects to see it.
         }
         guard c.isNotifying else { return }
+        // Inside the notifying gate on purpose. The punch characteristic can be READ as
+        // well as subscribed to, and what a read returns is the newest punch the board
+        // has stored, which on a wrap that has been sitting on a shelf is a punch
+        // somebody threw yesterday. Counting one of those onto a leaderboard would put
+        // a number against a name that was not in the room.
+        if c.uuid == WrapCentral.punchData {
+            if let punch = Punch.record(data), !punch.replay { lastPunch = punch }
+        } else if c.uuid == WrapCentral.punchScore {
+            // Only when the record is not coming. A wrap with both would otherwise
+            // report every punch twice, once as a record and once as a score, and the
+            // count on the board would be double the count on the bag.
+            let rich = (p.services ?? []).contains { s in
+                (s.characteristics ?? []).contains { $0.uuid == WrapCentral.punchData }
+            }
+            if !rich, let punch = Punch.bareScore(data) { lastPunch = punch }
+        }
         emit?("notify", ["device": p.identifier.uuidString,
                          "characteristic": c.uuid.uuidString.lowercased(),
                          "data": data.base64EncodedString()])
