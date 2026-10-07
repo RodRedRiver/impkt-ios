@@ -1,0 +1,69 @@
+/* HTML mirrors of the four SwiftUI tabs, for tools/preview.py. Drawn from the Swift source, not rendered
+   from it: change a Swift view and the matching mirror in preview-tabs.js has to change with it. */
+:root { --red:#C41E3A; --canvas:#f5f5f7; --sec:#8a8a8e; --hair:rgba(60,60,67,.29); }
+#native, #native * { corner-shape: squircle; }
+#native { position:absolute; left:0; width:100%; background:var(--canvas); display:none; flex-direction:column; color:#000;
+          font-family:-apple-system,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+#native.on { display:flex; }
+#native .nav { flex:none; height:44px; display:flex; align-items:center; justify-content:flex-end; padding:0 16px; color:var(--red); font-size:20px; }
+@keyframes tabin { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+#native .scroll { animation:tabin .45s cubic-bezier(.32,.72,0,1); flex:1; overflow-y:auto; padding-bottom:24px; scrollbar-width:none; }
+#native .scroll::-webkit-scrollbar { display:none; }
+#native .ltitle { font-size:34px; line-height:41px; font-weight:700; letter-spacing:.37px; padding:0 20px 8px; }
+
+/* inset grouped list */
+#native .sh { font-size:13px; line-height:18px; text-transform:uppercase; color:var(--sec); margin:26px 32px 7px; }
+#native .sf { font-size:13px; line-height:18px; color:var(--sec); margin:7px 32px 0; }
+#native .grp { margin:0 16px; background:#fff; border-radius:10px; overflow:hidden; }
+#native .r { position:relative; padding:11px 16px; min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+#native .r + .r::before { content:''; position:absolute; top:0; left:16px; right:0; height:.5px; background:var(--hair); }
+#native .r.col { flex-direction:column; align-items:stretch; justify-content:center; gap:6px; }
+#native .t { font-size:17px; line-height:22px; }
+#native .foot { font-size:13px; line-height:18px; color:var(--sec); }
+#native .cap { font-size:12px; line-height:16px; color:var(--sec); }
+#native .cap2 { font-size:11px; line-height:13px; color:var(--sec); }
+#native .f13 { font-size:13px; line-height:18px; }
+#native .link { color:var(--red); font-size:13px; line-height:18px; font-weight:400; }
+#native .red { color:var(--red); }
+#native .warn { color:#ff9500; } #native .ok { color:#34c759; }
+#native .ch { color:#c4c4c7; font-size:13px; }
+#native .bar { height:4px; border-radius:2px; background:#e5e5ea; overflow:hidden; } #native .bar i { display:block; height:100%; background:var(--red); border-radius:2px; }
+#native .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+/* leaderboard */
+#native .card { background:#fff; border-radius:20px; padding:18px; margin:0 16px 12px; text-align:center; }
+#native .card .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; text-align:left; }
+#native .card .hd b { font-size:17px; font-weight:600; }
+#native .fig { display:flex; justify-content:center; align-items:baseline; gap:6px; }
+#native .fig b { font-size:80px; line-height:84px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-1px; font-family:-apple-system,"SF Pro Rounded","Helvetica Neue",sans-serif; }
+#native .fig span { font-size:20px; font-weight:500; color:var(--sec); }
+#native .fig.quiet b { color:rgba(138,138,142,.35); } #native .fig.hot b { color:var(--red); }
+#native .stack > * + * { margin-top:14px; }
+#native .btn { display:block; width:100%; border:1px solid rgba(255,226,232,.78); border-radius:999px; padding:12px; color:#1d1d1f; font:600 15px -apple-system,sans-serif; background:linear-gradient(118deg, rgba(255,255,255,.72), rgba(255,255,255,.16) 34%, rgba(255,255,255,.42) 62%, rgba(255,255,255,.12)), rgba(196,30,58,.15); -webkit-backdrop-filter:blur(22px) saturate(1.7); backdrop-filter:blur(22px) saturate(1.7); box-shadow:inset 1px 1px 1px rgba(255,255,255,.75), inset -1px -1px 1px rgba(255,255,255,.35), 0 10px 28px rgba(10,10,12,.08); corner-shape:round; }
+#native .entry { display:flex; gap:8px; align-items:center; }
+#native .entry .in { flex:1; text-align:left; background:var(--canvas); border-radius:12px; padding:10px 12px; font-size:17px; color:#c7c7cc; }
+#native .entry .go { color:var(--red); font-size:15px; font-weight:600; }
+#native .chips { display:flex; gap:8px; overflow:hidden; margin-top:10px; }
+#native .chips span { flex:none; background:var(--canvas); border-radius:999px; padding:7px 12px; font-size:13px; font-weight:500; }
+#native .hands .tr { display:flex; height:8px; gap:2px; } #native .hands .tr i { border-radius:3px; background:rgba(196,30,58,.28); } #native .hands .tr i.s { background:var(--red); }
+#native .hands .lb { display:flex; justify-content:space-between; margin-top:6px; font-size:12px; color:var(--sec); font-variant-numeric:tabular-nums; }
+#native .stand .row { display:flex; align-items:center; gap:12px; padding:9px 0; text-align:left; position:relative; }
+#native .stand .row + .row::before { content:''; position:absolute; top:0; left:0; right:0; height:.5px; background:var(--hair); }
+#native .stand .m { flex:none; width:26px; height:26px; border-radius:13px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--sec); box-shadow:inset 0 0 0 1px rgba(138,138,142,.25); }
+#native .stand .m.p1 { background:var(--red); color:#fff; box-shadow:none; } #native .stand .m.p2 { background:rgba(138,138,142,.55); color:#fff; box-shadow:none; } #native .stand .m.p3 { background:rgba(138,138,142,.3); color:#fff; box-shadow:none; }
+#native .stand .nm { flex:1; min-width:0; } #native .stand .nm div:first-child { font-size:15px; } #native .stand .pw { font-size:20px; font-weight:600; font-variant-numeric:tabular-nums; }
+#native .pad16 { padding:0 16px; }
+
+/* profile */
+#native .seg { display:flex; background:rgba(118,118,128,.12); border-radius:9px; padding:2px; font-size:13px; }
+#native .seg span { flex:1; text-align:center; padding:6px 0; border-radius:7px; } #native .seg span.on { background:#fff; font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+/* the system slider as WebKit draws it: 4px track, 24 by 16 capsule thumb. Same as the page's. */
+#native input[type=range] { -webkit-appearance:none; appearance:none; width:100%; height:32px; margin:4px 0 0; background:none; }
+#native input[type=range]::-webkit-slider-runnable-track { height:4px; border-radius:2px; background:linear-gradient(90deg, var(--red) 0 var(--slider-fill,50%), #e4e4e9 var(--slider-fill,50%) 100%); box-shadow:0 0 0 1px #fff; }
+#native input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:16px; margin-top:-6px; border:0; border-radius:8px; background:#fff; box-shadow:0 0 2px rgba(0,0,0,.24); }
+#native .sw { flex:none; width:51px; height:31px; border-radius:16px; background:var(--red); position:relative; } #native .sw::after { content:''; position:absolute; top:2px; right:2px; width:27px; height:27px; border-radius:50%; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.2); }
+#native .pick { color:var(--sec); font-size:17px; } #native .pick::after { content:' \2195'; font-size:12px; }
+
+/* preview-only controls */
+#states { display:flex; gap:8px; flex-wrap:wrap; }
+#states button { font-size:12px; padding:6px 11px; }

@@ -9,7 +9,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 PAGE="${PAGE:-$HOME/stryke-systems/test/index.html}"
-FW_DIR="${FW_DIR:-$HOME/Documents/boxing-fw}"
+FW_DIR="${FW_DIR:-$HOME/Documents/Impkt}"
 DEST="$HERE/IMPKT/Resources"
 
 if [ ! -f "$PAGE" ]; then

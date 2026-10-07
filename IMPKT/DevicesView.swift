@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Connecting your wraps, and what the phone can hear.
 ///
@@ -7,9 +8,9 @@ import SwiftUI
 /// asked when something is not working, whether the phone can hear the wrap at all,
 /// how well, which hand it thinks it is on, and whether the app has met it before.
 ///
-/// The Update tab has a list of wraps too and it is not this one. That list exists to
-/// be pressed, and every row in it is a target for a firmware image, so it says as
-/// little as it can get away with.
+/// Firmware updates happen here too, on the wrap in the list: Update beside each wrap
+/// that is nearby, and an offer under a connected hand whose wrap reports older
+/// firmware than the one inside this app.
 ///
 /// Connecting happens in the page and not here. See PageControl: the punches from a
 /// wrap have to arrive inside the drill running in the web view, so the page holds the
@@ -26,6 +27,16 @@ struct DevicesView: View {
     @State private var remembered: [UUID] = []
     /// Set by pressing Forget, cleared by answering the question.
     @State private var forgetting: UUID?
+    /// Firmware updates happen here, on the wrap in the list. Set by tapping Update, cleared by
+    /// answering the confirmation.
+    ///
+    /// An update is not a safe thing to start by accident on these wraps. The bootloader erases
+    /// the application before a byte of the new image arrives, so an update that does not finish
+    /// leaves a wrap that cannot punch, cannot be woken by shaking, and needs a computer and a
+    /// cable to come back. It also loses the wrap's stored identity. None of that is a reason not
+    /// to update over the air, only a reason for the tap to say what it costs.
+    @State private var confirming: FoundWrap?
+    @StateObject private var updater = Updater()
 
     /// What the page says about both hands, re-read every second and a bit while this
     /// screen is up, because a wrap can drop on its own and a drill can start in the
@@ -44,9 +55,15 @@ struct DevicesView: View {
         NavigationView {
             List {
                 Section {
-                    Text(explainer).font(.footnote).foregroundColor(.secondary)
+                    if !explainer.isEmpty {
+                        Text(explainer).font(.footnote).foregroundColor(.secondary)
+                    }
                 } header: {
                     Text(state)
+                }
+
+                if updater.phase != .idle {
+                    Section { updateStatus } header: { Text("Update") }
                 }
 
                 wraps()
@@ -67,17 +84,23 @@ struct DevicesView: View {
                             }
                             Spacer(minLength: 12)
                             Text(strength(wrap.rssi)).font(.footnote).foregroundColor(.secondary)
+                            if updater.target?.id == wrap.id,
+                               updater.phase == .connecting || updater.phase == .sending {
+                                ProgressView()
+                            } else {
+                                Button(wrap.inBootloader ? "Finish update" : "Update") { confirming = wrap }
+                                    .font(.footnote)
+                                    .disabled(updater.phase == .connecting || updater.phase == .sending)
+                            }
                         }
                     }
                 }
 
                 Section("Remembered") {
-                    if absent.isEmpty {
-                        Text(remembered.isEmpty
-                             ? "Nothing yet. A wrap is remembered the first time it is "
-                               + "connected, here or on the Test tab, and stays remembered "
-                               + "so it never has to be picked twice."
-                             : "Every wrap this phone knows is in the list above.")
+                    if absent.isEmpty && remembered.isEmpty {
+                        Text("Nothing yet. A wrap is remembered the first time it is "
+                             + "connected, here or on the Test tab, and stays remembered "
+                             + "so it never has to be picked twice.")
                             .font(.footnote).foregroundColor(.secondary)
                     }
                     ForEach(absent, id: \.self) { id in
@@ -93,15 +116,6 @@ struct DevicesView: View {
                                 .font(.footnote)
                         }
                     }
-                }
-
-                Section {
-                    Text("None of this goes over the internet. It is what the phone's own "
-                         + "radio can hear in the room, and Bluetooth reaches a few metres. "
-                         + "A wrap stops advertising while something is connected to it, so "
-                         + "a connected wrap is listed from the link itself rather than "
-                         + "from the air.")
-                        .font(.caption).foregroundColor(.secondary)
                 }
             }
             .onCanvas()
@@ -126,6 +140,23 @@ struct DevicesView: View {
                 if !central.updating { central.stopScan() }
                 self.ticker?.invalidate()
                 self.ticker = nil
+            }
+            .alert("Update this wrap over Bluetooth?",
+                   isPresented: Binding(get: { confirming != nil },
+                                        set: { if !$0 { confirming = nil } }),
+                   presenting: confirming) { wrap in
+                Button("Update", role: .destructive) {
+                    let target = wrap
+                    confirming = nil
+                    updater.start(target)
+                }
+                Button("Cancel", role: .cancel) { confirming = nil }
+            } message: { _ in
+                Text("Keep the phone next to the wrap until it finishes. The wrap's "
+                   + "firmware is erased before any of the new firmware arrives, so an "
+                   + "update that stops part way leaves a wrap that needs a computer "
+                   + "and a cable to come back. It also clears the wrap's hand setting, "
+                   + "which the app asks for again afterwards.")
             }
             .alert("Forget this wrap?",
                    isPresented: Binding(get: { forgetting != nil },
@@ -158,16 +189,26 @@ struct DevicesView: View {
     @ViewBuilder private func wraps() -> some View {
         Section {
             if let page = page, page.canPair, page.activated {
-                Text(wearing).font(.caption).foregroundColor(.secondary)
                 ForEach(PageControl.Side.allCases) { side in
                     hand(side, page)
+                    // Offered the moment a connected wrap turns out to be running older firmware
+                    // than the one inside this app, and not before: an update is never suggested
+                    // for a version the wrap did not report.
+                    let h = side == .left ? page.left : page.right
+                    if h.on, Updater.isNewer(Updater.bundledVersion, than: h.fw) {
+                        Button("Update to \(Updater.bundledVersion)") { startUpdate(h) }
+                            .font(.footnote)
+                            .disabled(updater.phase == .connecting || updater.phase == .sending)
+                    }
                 }
                 Button(searchLabel) { search() }
                     .font(.footnote)
                     .disabled(searching || busy != nil || page.running)
 
-                Text(searchNote)
-                    .font(.caption).foregroundColor(.secondary)
+                if !searchNote.isEmpty {
+                    Text(searchNote)
+                        .font(.caption).foregroundColor(.secondary)
+                }
                 if !note.isEmpty {
                     Text(note).font(.caption).foregroundColor(.impktRed)
                 }
@@ -177,6 +218,71 @@ struct DevicesView: View {
             }
         } header: {
             Text("Your wraps")
+        }
+    }
+
+    /// The wrap the page reports as connected on this hand, as the app's own list knows it, so the
+    /// update can be started on it. Matched by identifier, which both sides take from the same peripheral.
+    private func startUpdate(_ h: PageControl.Hand) {
+        if let wrap = central.found.first(where: { $0.id.uuidString.caseInsensitiveCompare(h.id) == .orderedSame }) {
+            confirming = wrap
+        } else {
+            note = "The phone cannot see that wrap in the list below right now. Shake it, wait for it "
+                 + "to appear under Nearby, and press Update there."
+        }
+    }
+
+    /// Progress, success and failure of an update, shown at the top of the screen for as long as
+    /// there is something to say about it.
+    @ViewBuilder private var updateStatus: some View {
+        switch updater.phase {
+        case .idle:
+            EmptyView()
+        case .connecting, .sending:
+            VStack(alignment: .leading, spacing: 8) {
+                ProgressView(value: updater.progress)
+                Text(updater.detail).font(.footnote).foregroundColor(.secondary)
+                Text("Do not close the app or walk away with the phone.")
+                    .font(.caption).foregroundColor(.secondary)
+                Button("Stop") { updater.cancel() }
+                    .font(.footnote)
+            }
+        case .done:
+            Label(updater.detail, systemImage: "checkmark.circle.fill")
+                .foregroundColor(.green).font(.footnote)
+        case .failed(let why):
+            let stranded = updater.jumped
+                || central.found.contains {
+                    $0.inBootloader && Date().timeIntervalSince($0.seen) < Updater.bootloaderGrace
+                }
+            VStack(alignment: .leading, spacing: 6) {
+                Label(stranded ? "That wrap is waiting in update mode" : "The update did not finish",
+                      systemImage: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange).font(.footnote)
+                Text(why).font(.caption).foregroundColor(.secondary)
+                Text(stranded
+                     ? "Until an update finishes it cannot punch, and shaking it will not wake it. "
+                       + "Press Finish update with the phone next to it. If that does not take, plug "
+                       + "it into a computer and put the firmware back over the cable, which always "
+                       + "works. Leave it powered in the meantime."
+                     : updater.neverConnected
+                       ? "The phone never got a link at all, so either the wrap went back to sleep, "
+                         + "or it is already in update mode from an earlier try. Shake it and look "
+                         + "for a wrap in update mode below."
+                       : "The wrap kept the firmware it had and still works. Shake it awake, wait "
+                         + "for it to appear below, and press Update again.")
+                    .font(.caption).foregroundColor(.secondary)
+                if updater.lastTarget != nil {
+                    Button(stranded ? "Finish update" : "Try again") { updater.retry() }
+                        .font(.footnote)
+                }
+                if !updater.log.isEmpty {
+                    Button("Copy the whole log") {
+                        UIPasteboard.general.string = updater.log.joined(separator: "\n")
+                    }
+                    .font(.footnote)
+                }
+            }
         }
     }
 
@@ -193,26 +299,13 @@ struct DevicesView: View {
     /// fact moved with the panel rather than going out with the steps.
     ///
     /// It is worth its own paragraph and not a clause because of the second half.
-    /// A wrap on the back of the wrist connects, records, counts and scores, and
-    /// every punch in it arrives rotated: there is no screen in this app that can
-    /// show a pilot that, which is exactly why it has to be written on one.
-    private var wearing: String {
-        "The hard part of each wrap goes against the inside of your wrist, the palm "
-        + "side, just behind the heel of your hand, and the wrap winds over the top "
-        + "of it. On the back of the wrist it still connects and still scores, and "
-        + "every punch arrives rotated. Nothing on this screen can tell you that "
-        + "has happened, which is why it is on it."
-    }
-
     private var searchNote: String {
         if page?.running == true {
             return "A drill is running on the Test tab. Connecting or dropping a wrap now "
                  + "would cost that recording its second half, so this waits until the "
                  + "drill is finished."
         }
-        return "A wrap sleeps until it is shaken. Shake both, press the button, and the "
-             + "ones that say which hand they are on connect themselves. This is the same "
-             + "connection the Test tab uses: there is one, and it is held by the page."
+        return ""
     }
 
     private func hand(_ side: PageControl.Side, _ page: PageControl.State) -> some View {
@@ -358,9 +451,7 @@ struct DevicesView: View {
             return "The Update tab is sending firmware and has the radio to itself while "
                  + "it does. This list fills in again when it finishes."
         }
-        return "A wrap sleeps until it is shaken, and stops advertising once something "
-             + "connects to it. So this is what is awake and within a few metres right "
-             + "now, not every wrap you own."
+        return ""
     }
 
     /// The same four words and the same four thresholds the page uses, because a wrap
@@ -377,7 +468,7 @@ struct DevicesView: View {
         var parts: [String] = []
         if let hand = handWord(wrap.id) { parts.append(hand) }
         if wrap.inBootloader {
-            parts.append("its last update stopped part way, so the Update tab is the only "
+            parts.append("its last update stopped part way, so updating it is the only "
                        + "thing it can do")
         }
         // A connected wrap has a live number: the link is read every two seconds, which

@@ -31,6 +31,8 @@ enum PageControl {
         var status = ""
         var rssi: Int?
         var battery = ""
+        /// The firmware the wrap says it is running, "" when it would not say.
+        var fw = ""
         var punches = 0
     }
 

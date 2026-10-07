@@ -182,9 +182,19 @@ final class Bridge: NSObject, WKScriptMessageHandler {
     func userContentController(_ controller: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
-              let id = body["id"] as? Int,
               let op = body["op"] as? String else { return }
         let args = body["args"] as? [String: Any] ?? [:]
+
+        // Not Bluetooth and not a question: the page asking the app to show one of its own tabs,
+        // which is how "Connect a wrap first" on the drills reaches the Devices tab. It has no id
+        // because nothing waits for an answer, and it is handled before the id check for that reason.
+        if op == "openTab" {
+            NotificationCenter.default.post(name: .impktOpenTab, object: nil,
+                                            userInfo: ["tab": (args["tab"] as? String) ?? ""])
+            return
+        }
+
+        guard let id = body["id"] as? Int else { return }
 
         WrapCentral.shared.handle(op: op, args: args) { [weak self] ok, payload in
             guard let self = self else { return }

@@ -41,7 +41,6 @@ struct LeaderboardView: View {
                     if !connected { bandBanner }
                     stage
                     standings
-                    footer
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -120,8 +119,10 @@ struct LeaderboardView: View {
                 Label(central.poweredOn ? "No band connected" : "Bluetooth is off for IMPKT",
                       systemImage: "dot.radiowaves.left.and.right")
                     .font(.footnote.weight(.medium))
-                Text(bandNote)
-                    .font(.caption).foregroundColor(.secondary)
+                if !bandNote.isEmpty {
+                    Text(bandNote)
+                        .font(.caption).foregroundColor(.secondary)
+                }
                 if central.poweredOn && page?.activated == true {
                     Button {
                         search()
@@ -153,9 +154,7 @@ struct LeaderboardView: View {
             return "Enter the activation code on the Test tab first. The band connects "
                  + "through the page, and the page is behind its front door."
         }
-        return "Shake the band to wake it, then press Connect. Names can be put up and "
-             + "the standings can be read with nothing connected, but no punch will land "
-             + "until one is."
+        return ""
     }
 
     // MARK: - the middle of the screen
@@ -210,10 +209,7 @@ struct LeaderboardView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
-                .buttonStyle(.plain)
-                .background(Color.impktRed, in: RoundedRectangle(cornerRadius: 14,
-                                                                 style: .continuous))
-                .foregroundColor(.white)
+                .buttonStyle(FrostedButtonStyle())
                 .font(.subheadline.weight(.semibold))
             }
         }
@@ -281,11 +277,6 @@ struct LeaderboardView: View {
                 } else {
                     Text("Nobody has hit it yet")
                         .font(.headline)
-                    Text("Put a name up, hand them the band, and their hardest punch goes "
-                       + "on the board. One band goes round the whole room: the only thing "
-                       + "that changes between people is the name on this screen.")
-                        .font(.caption).foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
                 }
                 nameEntry(label: "Put them up")
             }
@@ -502,32 +493,6 @@ struct LeaderboardView: View {
                 Circle().strokeBorder(Color.secondary.opacity(place <= 3 ? 0 : 0.25),
                                       lineWidth: 1)
             )
-    }
-
-    // MARK: - the bottom of the screen
-
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Power, measured at the band on the hand that threw it, with hand speed "
-               + "underneath it. One band is enough: put the next name up and hand it over.")
-            Text("Left against right needs both wraps to have landed something. Once they "
-               + "have, the bar splits at the two best punches and names the harder hand.")
-            Text("The board is this phone's and stays on it. Nothing here goes over the "
-               + "internet, and starting a new board is the only thing that clears it. "
-               + "Standing since \(started).")
-        }
-        .font(.caption)
-        .foregroundColor(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
-        .padding(.horizontal, 2)
-    }
-
-    private var started: String {
-        let f = DateFormatter()
-        f.dateStyle = Calendar.current.isDateInToday(board.since) ? .none : .medium
-        f.timeStyle = .short
-        return f.string(from: board.since)
     }
 
     // MARK: - the phone reacting

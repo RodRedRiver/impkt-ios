@@ -48,7 +48,6 @@ struct ProfileView: View {
                     you(snap)
                     code(snap)
                     profile(snap)
-                    sent(snap)
                 } else {
                     Section {
                         Text(asked
@@ -60,6 +59,7 @@ struct ProfileView: View {
                     }
                 }
                 about()
+                privacy()
                 if let snap = snap, snap.activated { clear() }
             }
             .onCanvas()
@@ -206,6 +206,8 @@ struct ProfileView: View {
                 Text(shown).foregroundColor(.secondary)
             }
             .font(.footnote)
+            // The system slider, deliberately: it is the one Apple builds and keeps current, so it draws the
+            // iOS 26 thumb and track on its own and nothing here needs redrawing when the system moves on.
             Slider(value: value, in: range, step: step) { editing in
                 if !editing { done() }
             }
@@ -244,24 +246,15 @@ struct ProfileView: View {
                 })
     }
 
-    private func sent(_ snap: PageStorage.Snapshot) -> some View {
+    /// The privacy policy, read in the app. It is one document, Resources/privacy.html, and the
+    /// sign-up screen shows the same file, so what a pilot accepted is what they can read here.
+    private func privacy() -> some View {
         Section {
-            Text("The profile and the code stay on this phone and nothing is sent while you "
-                 + "fill them in. When you finish a drill, that drill goes to our database "
-                 + "and nowhere else, and it carries a copy of this: your name, your gym, "
-                 + "your serial, what the drill asked for and every punch in it. That is "
-                 + "the whole of what we send.")
-                .font(.footnote).foregroundColor(.secondary)
-            if snap.outbox > 0 {
-                Text(snap.outbox == 1
-                     ? "One finished drill has not reached us yet. It goes up on its own the "
-                       + "next time the page has a connection."
-                     : "\(snap.outbox) finished drills have not reached us yet. They go up on "
-                       + "their own the next time the page has a connection.")
-                    .font(.caption).foregroundColor(.secondary)
+            NavigationLink(destination: PolicyView()
+                .navigationTitle("Privacy policy")
+                .navigationBarTitleDisplayMode(.inline)) {
+                Text("Privacy policy").font(.footnote)
             }
-        } header: {
-            Text("What leaves this phone")
         }
     }
 
@@ -269,10 +262,6 @@ struct ProfileView: View {
         Section {
             row("App", Self.appVersion)
             row("Firmware in this app", Updater.bundledVersion)
-            Text("The firmware is bundled with the app, so a wrap updated from the Update "
-                 + "tab ends up on the version named here and there is one answer to what "
-                 + "is on your wraps.")
-                .font(.caption).foregroundColor(.secondary)
         } header: {
             Text("This build")
         }
@@ -382,3 +371,4 @@ struct ProfileView: View {
         reachCm = min(225, max(150, reach))
     }
 }
+

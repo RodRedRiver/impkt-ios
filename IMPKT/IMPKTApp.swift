@@ -69,6 +69,27 @@ extension Color {
     static let pageCanvas = Color(red: 0xF5 / 255, green: 0xF5 / 255, blue: 0xF7 / 255)
 }
 
+/// The frosted capsule the page's buttons are: translucent, blurring what is behind it, with a thin
+/// light rim and dark type. Matte, no gloss and no colour. Pressing springs it in.
+struct FrostedButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundColor(.primary)
+            .background(.ultraThinMaterial, in: Capsule())
+            .background(Color.impktRed.opacity(configuration.isPressed ? 0.20 : 0.14), in: Capsule())
+            .overlay(
+                Capsule().strokeBorder(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.8), Color.white.opacity(0.18), Color.white.opacity(0.5)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 12, y: 6)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(response: 0.32, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
 extension View {
     /// A list that sits on the page's canvas instead of the system's grouped grey.
     ///
@@ -87,13 +108,19 @@ extension View {
 /// Leaderboard is one band, a queue of people and the hardest punch of the session,
 /// which is what a gym asks for within a minute of being handed a band and is a
 /// different shape from a drill: no profile, no plan, no recording, one name at a time.
-/// Update installs firmware over Bluetooth, which no browser can. Devices says what
-/// the phone can hear right now, which the page only shows while it happens to be
-/// looking for something. Profile says what is stored on this phone and what leaves
-/// it, which is worth being able to read without starting a drill to get to it.
+/// Devices says what the phone can hear right now, which the page only shows while it
+/// happens to be looking for something, and it is also where a wrap is updated over
+/// Bluetooth, which no browser can do. Profile says what is stored on this phone, and
+/// holds the privacy policy.
 struct RootView: View {
+    /// The tab on screen. Held here, not by the TabView, so that something other than a tap can
+    /// change it: the page asks for Devices when there is no wrap to run a drill with.
+    @State private var tab = 0
+
+    private static let tabs = ["test": 0, "leaderboard": 1, "devices": 2, "profile": 3]
+
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             // Inside the safe area, top and bottom, so nothing the page draws slides
             // under the clock or behind the tab bar. What that leaves is a band above
             // the page and a band below it, and both are painted the page's own
@@ -103,19 +130,30 @@ struct RootView: View {
             PilotPage()
                 .background(Color.pageCanvas)
                 .tabItem { Label("Test", systemImage: "figure.boxing") }
+                .tag(0)
 
             LeaderboardView()
                 .tabItem { Label("Leaderboard", systemImage: "trophy") }
-
-            UpdateView()
-                .tabItem { Label("Update", systemImage: "arrow.down.circle") }
+                .tag(1)
 
             DevicesView()
                 .tabItem { Label("Devices", systemImage: "dot.radiowaves.left.and.right") }
+                .tag(2)
 
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tag(3)
         }
         .tint(.impktRed)
+        .onReceive(NotificationCenter.default.publisher(for: .impktOpenTab)) { note in
+            if let name = note.userInfo?["tab"] as? String, let index = RootView.tabs[name] {
+                tab = index
+            }
+        }
     }
+}
+
+extension Notification.Name {
+    /// The page asking the app to show one of its tabs. userInfo["tab"] is "devices", "profile" and so on.
+    static let impktOpenTab = Notification.Name("impkt.openTab")
 }

@@ -51,6 +51,20 @@ final class Updater: NSObject, ObservableObject {
         Bundle.main.url(forResource: "firmware", withExtension: "zip")
     }
 
+    /// True when `a` is a later release than `b`. Compared as numbers, field by field, so 2.9 is
+    /// older than 2.10, and false whenever either side is missing: an update is only offered
+    /// when the app can say why.
+    static func isNewer(_ a: String, than b: String) -> Bool {
+        let x = a.split(separator: ".").compactMap { Int($0) }
+        let y = b.split(separator: ".").compactMap { Int($0) }
+        guard !x.isEmpty, !y.isEmpty else { return false }
+        for i in 0..<max(x.count, y.count) {
+            let p = i < x.count ? x[i] : 0, q = i < y.count ? y[i] : 0
+            if p != q { return p > q }
+        }
+        return false
+    }
+
     static var bundledVersion: String {
         guard let url = Bundle.main.url(forResource: "firmware-version", withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return "unknown" }
@@ -291,203 +305,5 @@ extension Updater: LoggerDelegate {
         // and an unbounded log on a retried update grows without limit.
         log.append(message)
         if log.count > 300 { log.removeFirst(log.count - 300) }
-    }
-}
-
-struct UpdateView: View {
-
-    @ObservedObject private var central = WrapCentral.shared
-    @StateObject private var updater = Updater()
-    /// Set by tapping a wrap, cleared by answering the confirmation.
-    ///
-    /// An update is not a safe thing to start by accident on these wraps. The
-    /// bootloader erases the application before a byte of the new image arrives,
-    /// so an update that does not finish leaves a wrap that cannot punch, cannot
-    /// be woken by shaking, and needs a computer and a cable to come back. It also
-    /// loses the wrap's stored identity, which is a new random unit id and the hand
-    /// assignment gone. None of that is a reason not to update over the air, which is
-    /// the only way a wrap in somebody's gym bag is ever going to be updated: it is a
-    /// reason for the tap to say what it costs, and for the phone to be asked to stay
-    /// put until it finishes.
-    @State private var confirming: FoundWrap?
-
-    var body: some View {
-        NavigationView {
-            List {
-                Section {
-                    switch updater.phase {
-                    case .idle:
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Wake a wrap by shaking it, pick it below, and it will be "
-                                 + "updated over Bluetooth. Keep the phone next to it. A wrap "
-                                 + "leaves the list when it goes back to sleep, so if it is not "
-                                 + "there, shake it again.")
-                                .font(.footnote).foregroundColor(.secondary)
-                        }
-                    case .connecting, .sending:
-                        VStack(alignment: .leading, spacing: 8) {
-                            ProgressView(value: updater.progress)
-                            Text(updater.detail).font(.footnote).foregroundColor(.secondary)
-                            Text("Do not close the app or walk away with the phone.")
-                                .font(.caption).foregroundColor(.secondary)
-                            Button("Stop") { updater.cancel() }
-                                .font(.footnote)
-                        }
-                    case .done:
-                        Label(updater.detail, systemImage: "checkmark.circle.fill")
-                            .foregroundColor(.green).font(.footnote)
-                    case .failed(let why):
-                        // Two failures that look identical and need opposite
-                        // advice. If the jump never happened the wrap is fine and
-                        // wants shaking; if the jump happened and the upload did
-                        // not, the wrap is sitting in its bootloader where shaking
-                        // it does nothing at all, because the firmware that would
-                        // feel the shake is not the thing that is running.
-                        // `jumped` counts as stranded on its own. The phone cannot
-                        // always see the bootloader at the moment it looks, and a
-                        // wrap that was told to jump has already had its
-                        // application erased, so promising it "still works" on the
-                        // strength of an empty scan list is the one wrong answer.
-                        // The bootloader half of this has to be a LIVE reading. It
-                        // was any bootloader row at all, on a list that stopped
-                        // ageing out the moment an update began, so one interrupted
-                        // update in the past made this screen insist for ever that a
-                        // healthy wrap was waiting in update mode and had to be left
-                        // powered. The wrap was running its firmware, advertising,
-                        // and connected to this very app while the screen said it.
-                        let stranded = updater.jumped
-                            || central.found.contains {
-                                $0.inBootloader
-                                    && Date().timeIntervalSince($0.seen)
-                                        < Updater.bootloaderGrace
-                            }
-                        VStack(alignment: .leading, spacing: 6) {
-                            Label(stranded ? "That wrap is waiting in update mode"
-                                           : "The update did not finish",
-                                  systemImage: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange).font(.footnote)
-                            Text(why).font(.caption).foregroundColor(.secondary)
-                            Text(stranded
-                                 ? "Until an update finishes it cannot punch, and shaking it "
-                                   + "will not wake it. Press Finish update with the phone next "
-                                   + "to it. If that does not take, plug it into a computer and "
-                                   + "put the firmware back over the cable, which always works."
-                                 : updater.neverConnected
-                                   ? "The phone never got a link at all, so either the wrap went "
-                                     + "back to sleep, or it is already in update mode from an "
-                                     + "earlier try and is answering on a different address. "
-                                     + "Shake it and look for a wrap in update mode below."
-                                   : "The wrap kept the firmware it had and still works. Shake it "
-                                     + "awake, wait for it to appear below, and press Update again.")
-                                .font(.caption).foregroundColor(.secondary)
-                            if stranded {
-                                Text("Leave it powered. If it loses power in this state it "
-                                     + "comes back needing a cable instead of the app.")
-                                    .font(.caption).foregroundColor(.secondary)
-                            }
-                            if updater.lastTarget != nil {
-                                Button(stranded ? "Finish update" : "Try again") { updater.retry() }
-                                    .font(.footnote)
-                            }
-                            // The log, on the screen, because the phone is the only
-                            // thing in the room when this fails and the step it died
-                            // on is the whole diagnosis.
-                            if !updater.log.isEmpty {
-                                // Sixteen rather than six. Six lines is exactly the
-                                // tail that every one of these failures shares, so
-                                // every screenshot looked identical and none of them
-                                // said which step it died on: whether the wrap was
-                                // ever connected, whether it was told to jump, and
-                                // whether a bootloader was found by scanning are all
-                                // further up, and they are the whole diagnosis.
-                                Text(updater.log.suffix(16).joined(separator: "\n"))
-                                    .font(.system(.caption2, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .textSelection(.enabled)
-                                Button("Copy the whole log") {
-                                    UIPasteboard.general.string =
-                                        updater.log.joined(separator: "\n")
-                                }
-                                .font(.footnote)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Firmware in this app: \(Updater.bundledVersion)")
-                }
-
-                Section("Wraps nearby") {
-                    if central.found.isEmpty {
-                        Text(central.poweredOn
-                             ? "Nothing yet. Shake a wrap to wake it."
-                             : "Bluetooth is off for this app. Turn it on in Settings.")
-                            .font(.footnote).foregroundColor(.secondary)
-                    }
-                    ForEach(central.found.sorted { $0.rssi > $1.rssi }) { wrap in
-                        Button {
-                            confirming = wrap
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(wrap.inBootloader ? "A wrap in update mode" : wrap.name)
-                                    // A connected wrap has no signal reading to
-                                    // show: RSSI comes from advertisements and a
-                                    // connected wrap has stopped sending them.
-                                    // Printing "signal 0 dBm" would read as a
-                                    // measurement, and a suspiciously good one.
-                                    Text(wrap.inBootloader
-                                         ? "Its last update stopped part way, signal \(wrap.rssi) dBm"
-                                         : wrap.connected
-                                           ? "Connected to this phone"
-                                           : "signal \(wrap.rssi) dBm")
-                                        .font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                                if updater.target?.id == wrap.id,
-                                   updater.phase == .connecting || updater.phase == .sending {
-                                    ProgressView()
-                                } else {
-                                    Text(wrap.inBootloader ? "Finish update" : "Update")
-                                        .font(.footnote)
-                                }
-                            }
-                        }
-                        .disabled(updater.phase == .connecting || updater.phase == .sending)
-                    }
-                }
-
-                Section {
-                    Text("An update needs the phone and the wrap in the same room: "
-                         + "Bluetooth reaches a few metres and nothing about this goes "
-                         + "over the internet. It takes a minute or two per wrap.")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            }
-            .onCanvas()
-            .navigationTitle("Update")
-            .onAppear { central.startScan() }
-            .onDisappear {
-                if updater.phase != .sending && updater.phase != .connecting {
-                    central.stopScan()
-                }
-            }
-            .alert("Update this wrap over Bluetooth?",
-                   isPresented: Binding(get: { confirming != nil },
-                                        set: { if !$0 { confirming = nil } }),
-                   presenting: confirming) { wrap in
-                Button("Update", role: .destructive) {
-                    let target = wrap
-                    confirming = nil
-                    updater.start(target)
-                }
-                Button("Cancel", role: .cancel) { confirming = nil }
-            } message: { _ in
-                Text("Keep the phone next to the wrap until it finishes. The wrap's "
-                   + "firmware is erased before any of the new firmware arrives, so an "
-                   + "update that stops part way leaves a wrap that needs a computer "
-                   + "and a cable to come back. It also clears the wrap's hand setting, "
-                   + "which the app asks for again afterwards.")
-            }
-        }
     }
 }
