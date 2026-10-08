@@ -145,10 +145,17 @@ struct DevicesView: View {
                    isPresented: Binding(get: { confirming != nil },
                                         set: { if !$0 { confirming = nil } }),
                    presenting: confirming) { wrap in
-                Button("Update", role: .destructive) {
+                Button("Update to \(Updater.bundledVersion)", role: .destructive) {
                     let target = wrap
                     confirming = nil
                     updater.start(target)
+                }
+                if let prev = Updater.previousVersion {
+                    Button("Install \(prev) instead", role: .destructive) {
+                        let target = wrap
+                        confirming = nil
+                        updater.start(target, previous: true)
+                    }
                 }
                 Button("Cancel", role: .cancel) { confirming = nil }
             } message: { _ in
@@ -241,7 +248,8 @@ struct DevicesView: View {
         case .connecting, .sending:
             VStack(alignment: .leading, spacing: 8) {
                 ProgressView(value: updater.progress)
-                Text(updater.detail).font(.footnote).foregroundColor(.secondary)
+                Text(updater.installing.isEmpty ? updater.detail : "Installing \(updater.installing). \(updater.detail)")
+                    .font(.footnote).foregroundColor(.secondary)
                 Text("Do not close the app or walk away with the phone.")
                     .font(.caption).foregroundColor(.secondary)
                 Button("Stop") { updater.cancel() }
@@ -275,6 +283,12 @@ struct DevicesView: View {
                 if updater.lastTarget != nil {
                     Button(stranded ? "Finish update" : "Try again") { updater.retry() }
                         .font(.footnote)
+                    // The way back. Whatever state the update left the wrap in, the previous release can be sent
+                    // instead, so a bad update never has to be waited out or fixed with a cable.
+                    if let prev = Updater.previousVersion, !updater.lastWasPrevious {
+                        Button("Install \(prev) instead") { updater.retry(previous: true) }
+                            .font(.footnote)
+                    }
                 }
                 if !updater.log.isEmpty {
                     Button("Copy the whole log") {
@@ -335,6 +349,7 @@ struct DevicesView: View {
             return h.status.isEmpty ? "Not connected" : h.status
         }
         var parts = [h.status.isEmpty ? "Connected" : h.status]
+        if !h.fw.isEmpty { parts.append("firmware \(h.fw)") }
         if !h.battery.isEmpty { parts.append("battery \(h.battery)") }
         if let rssi = h.rssi, rssi > -127 { parts.append("signal \(strength(rssi).lowercased())") }
         return parts.joined(separator: ", ")

@@ -46,9 +46,28 @@ final class Updater: NSObject, ObservableObject {
     /// making somebody find it in the list again, which on a wrap that is now
     /// sitting in its bootloader is not possible by shaking it.
     private(set) var lastTarget: FoundWrap?
+    /// Which of the two bundled releases the last attempt was installing, so that Try again means the same one.
+    private(set) var lastWasPrevious = false
+    /// The version the attempt in progress is installing, for the screen to say.
+    @Published private(set) var installing = ""
 
     static var bundledZip: URL? {
         Bundle.main.url(forResource: "firmware", withExtension: "zip")
+    }
+
+    /// The release before the bundled one, kept so that an update which goes wrong, or a release that turns
+    /// out worse than the one it replaced, can always be undone from the phone. Optional: a build without it
+    /// simply offers no way back.
+    static var previousZip: URL? {
+        Bundle.main.url(forResource: "firmware-previous", withExtension: "zip")
+    }
+
+    static var previousVersion: String? {
+        guard previousZip != nil,
+              let url = Bundle.main.url(forResource: "firmware-previous-version", withExtension: "txt"),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let v = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? nil : v
     }
 
     /// True when `a` is a later release than `b`. Compared as numbers, field by field, so 2.9 is
@@ -71,11 +90,13 @@ final class Updater: NSObject, ObservableObject {
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func start(_ wrap: FoundWrap) {
-        guard let zip = Updater.bundledZip else {
+    func start(_ wrap: FoundWrap, previous: Bool = false) {
+        guard let zip = previous ? Updater.previousZip : Updater.bundledZip else {
             phase = .failed("no firmware is bundled with this build of the app")
             return
         }
+        lastWasPrevious = previous
+        installing = previous ? (Updater.previousVersion ?? "") : Updater.bundledVersion
         guard let peripheral = WrapCentral.shared.peripheral(wrap.id) else {
             phase = .failed("the phone cannot see that wrap any more")
             return
@@ -174,7 +195,8 @@ final class Updater: NSObject, ObservableObject {
     /// minutes and reporting the healthy wrap next to it as stranded.
     static let bootloaderGrace: TimeInterval = 6
 
-    func retry() {
+    /// `previous` picks the release to send: nil means the same one the last attempt was sending.
+    func retry(previous: Bool? = nil) {
         let live = WrapCentral.shared.found
         let boot = live.first {
             $0.inBootloader
@@ -197,7 +219,7 @@ final class Updater: NSObject, ObservableObject {
             WrapCentral.shared.giveBackRadio()
             return
         }
-        start(wrap)
+        start(wrap, previous: previous ?? lastWasPrevious)
     }
 
     func cancel() {

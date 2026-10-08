@@ -52,5 +52,15 @@ cp "$ZIP" "$DEST/firmware.zip"
 VER="$(basename "$ZIP" | sed -E 's/^BOXING-01_v(.+)_dfu_package\.zip$/\1/')"
 printf '%s\n' "$VER" > "$DEST/firmware-version.txt"
 echo "firmware: v$VER from $(basename "$ZIP")"
+
+# The release before it, so the app can always offer the way back. Picked by version number, not by file date.
+PREV="$(ls "$FW_DIR"/BOXING-01_v*_dfu_package.zip "$FW_DIR/../Old firmware versions"/BOXING-01_v*_dfu_package.zip 2>/dev/null \
+  | sed -E 's#^(.*)/BOXING-01_v(.+)_dfu_package\.zip$#\2 \1/BOXING-01_v\2_dfu_package.zip#' | sort -t' ' -k1,1 -V \
+  | awk -v cur="$VER" '$1 != cur { last=$0 } $1 == cur { exit } END { print last }' | cut -d' ' -f2-)"
+if [ -n "$PREV" ] && [ -f "$PREV" ]; then
+  cp "$PREV" "$DEST/firmware-previous.zip"
+  printf '%s\n' "$(basename "$PREV" | sed -E 's/^BOXING-01_v(.+)_dfu_package\.zip$/\1/')" > "$DEST/firmware-previous-version.txt"
+  echo "previous: v$(cat "$DEST/firmware-previous-version.txt") from $(basename "$PREV")"
+fi
 echo
 echo "Now build in Xcode. The Update tab will offer v$VER to any wrap it can see."
