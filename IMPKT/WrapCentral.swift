@@ -141,6 +141,9 @@ final class WrapCentral: NSObject, ObservableObject {
     private var pickDeadline: Date?
     private var pickPreferredNames: [String] = []
     private var queued: [() -> Void] = []
+    /// Wraps that came back from discovery without the punch service and are being asked for it by name,
+    /// once, before the connect is called a failure. See `finishConnect`.
+    private var askedForPunchService: Set<UUID> = []
 
     private let knownKey = "impkt.known.wraps"
     /// Identifiers that have completed a connect at least once. Kept so a stale
@@ -672,6 +675,7 @@ extension WrapCentral: CBCentralManagerDelegate {
         if let i = found.firstIndex(where: { $0.id == p.identifier }) {
             found[i].connected = false
         }
+        askedForPunchService.remove(p.identifier)
         settleRelease(p.identifier)
         emit?("disconnected", ["device": p.identifier.uuidString])
     }
@@ -711,6 +715,7 @@ extension WrapCentral: CBPeripheralDelegate {
     /// close, and the next connect to that wrap then fails for a second reason.
     private func failConnect(_ p: CBPeripheral, _ why: String) {
         servicesLeft[p.identifier] = nil
+        askedForPunchService.remove(p.identifier)
         guard let reply = settleConnect(p.identifier) else { return }
         manager.cancelPeripheralConnection(p)
         reply(false, ["name": "NetworkError", "message": why])
@@ -718,6 +723,21 @@ extension WrapCentral: CBPeripheralDelegate {
 
     private func finishConnect(_ p: CBPeripheral) {
         servicesLeft[p.identifier] = nil
+        // A wrap with no punch service on its list is either in its bootloader or is being
+        // answered from a GATT table iOS cached while it WAS in its bootloader, which is what a
+        // failed update leaves behind: the table is kept against the board's address, and the
+        // bootloader and the firmware share that address. Asking for the punch service BY UUID is
+        // the one thing the app can do about it, because a service the cache does not hold has to
+        // be looked for on the wrap itself. Once only, with the connect still open, so a wrap that
+        // really is a bootloader costs one extra round trip and then fails as it did before.
+        let listed = (p.services ?? []).contains { $0.uuid == WrapCentral.punchService }
+        if !listed, !askedForPunchService.contains(p.identifier),
+           connectWaiters[p.identifier] != nil {
+            askedForPunchService.insert(p.identifier)
+            p.discoverServices([WrapCentral.punchService])
+            return
+        }
+        askedForPunchService.remove(p.identifier)
         guard let reply = settleConnect(p.identifier) else { return }
         // Characteristics are the whole point of the connection. A wrap that
         // listed services and then no characteristics under any of them is the
@@ -746,7 +766,8 @@ extension WrapCentral: CBPeripheralDelegate {
                           "message": "that wrap connected but is not offering the punch "
                                    + "service, so it is either still in update mode or "
                                    + "this phone is holding a stale copy of its services. "
-                                   + "Turn Bluetooth off and on, then connect again."])
+                                   + "In the iPhone's Settings, open Bluetooth, turn it off "
+                                   + "and on (or restart the phone), then connect again."])
             return
         }
         markProven(p.identifier)

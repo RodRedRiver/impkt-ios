@@ -4664,8 +4664,13 @@
       return true;
     } catch (err) {
       drop(side, 'Would not connect');
+      /* The reason, word for word, because "would not connect" alone cannot be acted on, and
+         then the one fix nothing in code can do: iOS keeps its own copy of a wrap's services
+         against the wrap's address and does not notice when new firmware changes them. Turning
+         Bluetooth off and on in Settings (not Control Center, which only disconnects) drops it. */
       connectNote('Found but the wrap would not talk: '
-        + (err && err.message ? err.message : err));
+        + (err && err.message ? err.message : err)
+        + '. On an iPhone, open Settings, then Bluetooth, turn it off and on, and connect again.');
       return false;
     }
   }
@@ -6300,6 +6305,8 @@
         };
       };
       return JSON.stringify({
+        /* The panel's own sentence about the last press, so a failure reads the same on both tabs. */
+        note: (document.getElementById('connect-note') || {}).textContent || '',
         canPair: canPair(),
         /* Past the gate. Before that there is no pilot, no profile and nothing
            the wraps could be recording for. */

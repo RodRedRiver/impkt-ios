@@ -219,6 +219,12 @@ struct DevicesView: View {
                 if !note.isEmpty {
                     Text(note).font(.caption).foregroundColor(.impktRed)
                 }
+                // The page's own reason when a hand would not connect. Without it this screen said
+                // "Would not connect" and nothing else, which nobody can do anything with.
+                if let why = page.note, !why.isEmpty,
+                   [page.left, page.right].contains(where: { !$0.on && $0.status == "Would not connect" }) {
+                    Text(why).font(.caption).foregroundColor(.impktRed).textSelection(.enabled)
+                }
             } else {
                 Text(waiting)
                     .font(.footnote).foregroundColor(.secondary)

@@ -47,6 +47,9 @@ enum PageControl {
         var running = false
         var left = Hand()
         var right = Hand()
+        /// The page's sentence about the last press, including the reason a connect failed.
+        /// Optional so a page without it still decodes.
+        var note: String?
     }
 
     /// `ok`, or why not, in the page's words: "no bluetooth", "none found", "refused",
