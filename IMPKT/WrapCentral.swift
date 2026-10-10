@@ -405,6 +405,18 @@ final class WrapCentral: NSObject, ObservableObject {
     /// out loud: a bridge that answers a call it does not implement with an empty
     /// success is the hardest kind of bug to see from inside a web page.
     func handle(op: String, args: [String: Any], reply: @escaping (Bool, [String: Any]) -> Void) {
+        // Scanning is asked for every few hundred milliseconds while a search runs, and logging it
+        // would push the steps of a connect out of the log before anybody could copy them.
+        guard op != "scan", op != "scanStop" else { perform(op: op, args: args, reply: reply); return }
+        let what = ConnectionLog.describe(op: op, args: args)
+        ConnectionLog.shared.add("page asks: \(what)")
+        perform(op: op, args: args) { ok, out in
+            ConnectionLog.shared.add("  \(what) -> \(ConnectionLog.outcome(ok: ok, out))")
+            reply(ok, out)
+        }
+    }
+
+    private func perform(op: String, args: [String: Any], reply: @escaping (Bool, [String: Any]) -> Void) {
         switch op {
 
         case "known":
@@ -536,12 +548,16 @@ final class WrapCentral: NSObject, ObservableObject {
         let job = DispatchWorkItem { [weak self] in self?.connectTimedOut(p) }
         connectTimers[id] = job
         DispatchQueue.main.asyncAfter(deadline: .now() + WrapCentral.connectTimeout, execute: job)
+        ConnectionLog.shared.add("connecting to \(p.name ?? "?") \(ConnectionLog.short(id.uuidString)), "
+                                 + "link state \(p.state.rawValue) (0 down, 1 connecting, 2 up)")
         manager.connect(p, options: nil)
     }
 
     private func connectTimedOut(_ p: CBPeripheral) {
         connectTimers[p.identifier] = nil
         guard let reply = connectWaiters.removeValue(forKey: p.identifier) else { return }
+        ConnectionLog.shared.add("connect TIMED OUT after \(Int(WrapCentral.connectTimeout)) s, link state "
+                                 + "\(p.state.rawValue), proven before: \(isProven(p.identifier))")
         // The pending request has to be withdrawn as well as answered. Left
         // standing, it completes minutes later when the wrap next wakes, and the
         // app connects to a wrap nobody asked for any more.
@@ -624,6 +640,8 @@ extension WrapCentral: CBCentralManagerDelegate {
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         poweredOn = central.state == .poweredOn
+        ConnectionLog.shared.add("bluetooth state \(central.state.rawValue)"
+                                 + (poweredOn ? " (on)" : " (not on: 4 off, 3 not allowed, 1 resetting)"))
         guard poweredOn else { return }
         let work = queued
         queued = []
@@ -651,6 +669,7 @@ extension WrapCentral: CBCentralManagerDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) {
+        ConnectionLog.shared.add("link up to \(ConnectionLog.short(p.identifier.uuidString)), discovering services")
         // Everything is discovered up front, services and characteristics both,
         // and handed to the page in one reply. The page then does its lookups
         // locally, so a screen that reads five characteristics costs one round
@@ -660,6 +679,7 @@ extension WrapCentral: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral,
                         error: Error?) {
+        ConnectionLog.shared.add("link FAILED to open: \(error.map { "\($0)" } ?? "no error given")")
         if let reply = settleConnect(p.identifier) {
             reply(false, ["name": "NetworkError",
                           "message": error?.localizedDescription ?? "the wrap would not connect"])
@@ -668,6 +688,8 @@ extension WrapCentral: CBCentralManagerDelegate {
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral,
                         error: Error?) {
+        ConnectionLog.shared.add("link DOWN from \(ConnectionLog.short(p.identifier.uuidString)): "
+                                 + (error.map { "\($0)" } ?? "closed by this app"))
         if let reply = settleConnect(p.identifier) {
             reply(false, ["name": "NetworkError",
                           "message": error?.localizedDescription ?? "the wrap dropped the link"])
@@ -689,6 +711,9 @@ extension WrapCentral: CBPeripheralDelegate {
         // into a handful of baffling ones: every getPrimaryService afterwards
         // fails with NotFoundError, which reads as the wrong firmware rather than
         // as a discovery that never happened.
+        ConnectionLog.shared.add("services: "
+            + ((p.services ?? []).map { ConnectionLog.short($0.uuid.uuidString) }.joined(separator: ","))
+            + (error.map { ", error \($0)" } ?? ""))
         if let e = error {
             failConnect(p, "the wrap connected but would not say what it offers: "
                          + e.localizedDescription)
@@ -705,6 +730,9 @@ extension WrapCentral: CBPeripheralDelegate {
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
                     error: Error?) {
+        ConnectionLog.shared.add("  \(ConnectionLog.short(service.uuid.uuidString)) has "
+            + ((service.characteristics ?? []).map { ConnectionLog.short($0.uuid.uuidString) }.joined(separator: ","))
+            + (error.map { ", error \($0)" } ?? ""))
         let left = (servicesLeft[p.identifier] ?? 1) - 1
         servicesLeft[p.identifier] = left
         if left <= 0 { finishConnect(p) }
@@ -714,6 +742,7 @@ extension WrapCentral: CBPeripheralDelegate {
     /// link the page has been told nothing about is a link nothing will ever
     /// close, and the next connect to that wrap then fails for a second reason.
     private func failConnect(_ p: CBPeripheral, _ why: String) {
+        ConnectionLog.shared.add("connect FAILED: \(why)")
         servicesLeft[p.identifier] = nil
         askedForPunchService.remove(p.identifier)
         guard let reply = settleConnect(p.identifier) else { return }
@@ -734,6 +763,7 @@ extension WrapCentral: CBPeripheralDelegate {
         if !listed, !askedForPunchService.contains(p.identifier),
            connectWaiters[p.identifier] != nil {
             askedForPunchService.insert(p.identifier)
+            ConnectionLog.shared.add("no punch service listed: asking the wrap for it by UUID")
             p.discoverServices([WrapCentral.punchService])
             return
         }

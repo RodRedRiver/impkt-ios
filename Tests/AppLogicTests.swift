@@ -38,6 +38,26 @@ expect(FirmwareMemory.recall(for: wrapId, in: suite) == "2.24", "an empty report
 FirmwareMemory.remember("2.21", for: wrapId, in: suite)
 expect(FirmwareMemory.recall(for: wrapId, in: suite) == "2.21", "a newer report replaces the old one")
 
+print("the connection log")
+var now = Date(timeIntervalSince1970: 0)
+let log = ConnectionLog(limit: 3, clock: { now })
+expect(log.text(header: ["h"]).contains("(nothing logged yet)"), "an empty log says so rather than copying nothing")
+log.add("one"); now += 1.5; log.add("two")
+expect(log.lines.count == 2 && log.lines[1].hasSuffix("  two"), "lines are kept in order")
+expect(log.lines[1].contains(":01.500"), "each line carries the time to the millisecond")
+log.add("three"); log.add("four")
+expect(log.lines.count == 3 && log.lines[0].hasSuffix("two"), "the oldest line goes once the limit is reached")
+expect(log.text(header: ["IMPKT connection log"]).hasPrefix("IMPKT connection log\n\n"), "the copy starts with its header")
+log.clear(); expect(log.lines.isEmpty, "clear empties it")
+expect(ConnectionLog.describe(op: "notify", args: ["device": "3F6CFE4A-0D3D-E5BB-6FB5-D4EE4D04B9AC",
+       "characteristic": "6e2a0002-b5a3-f393-e0a9-e50e24dcca9e", "on": true]) == "notify wrap 3f6cfe4a char 6e2a0002 on",
+       "a request reads as op, wrap, characteristic")
+expect(ConnectionLog.outcome(ok: false, ["name": "NetworkError", "message": "the wrap dropped the link"])
+       == "FAILED NetworkError: the wrap dropped the link", "a failure is logged with its name and message in full")
+expect(ConnectionLog.outcome(ok: true, ["data": Data([1, 2, 3]).base64EncodedString()]) == "ok, 3 bytes", "a read logs its length")
+expect(ConnectionLog.outcome(ok: true, ["services": [["uuid": "6e2a0001-b5a3"], ["uuid": "0000180a-0000"]]])
+       == "ok, services 6e2a0001,0000180a", "a connect logs the services it found")
+
 print("the bundled firmware is the one on the sensor")
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let bundled = (try? String(contentsOf: root.appendingPathComponent("IMPKT/Resources/firmware-version.txt"), encoding: .utf8))?

@@ -50,6 +50,8 @@ struct DevicesView: View {
     /// The last thing a press led to, when it led to nothing visible.
     @State private var note = ""
     @State private var ticker: Timer?
+    /// Set for a moment after the log is copied, so the press visibly did something.
+    @State private var copiedLog = false
 
     var body: some View {
         NavigationView {
@@ -116,6 +118,20 @@ struct DevicesView: View {
                                 .font(.footnote)
                         }
                     }
+                }
+
+                Section {
+                    Button(copiedLog ? "Copied" : "Copy connection log") { copyLog() }
+                        .font(.footnote)
+                    Button("Clear the log", role: .destructive) { ConnectionLog.shared.clear() }
+                        .font(.footnote)
+                } header: {
+                    Text("When something will not connect")
+                } footer: {
+                    Text("Every Bluetooth step the app took and what came back, with the time. "
+                       + "Press Connect, let it fail, then copy this and paste it to whoever is "
+                       + "helping. Nothing in it is personal: wrap ids are shortened and no punches "
+                       + "or names are in it.")
                 }
             }
             .onCanvas()
@@ -345,6 +361,32 @@ struct DevicesView: View {
             }
         }
         .font(.footnote)
+    }
+
+    /// The log, with what it needs to be read by somebody who is not holding the phone: which build,
+    /// which firmware it carries, which iOS, and what the page says about each hand right now.
+    private func copyLog() {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let build = "\(info["CFBundleShortVersionString"] as? String ?? "?") (\(info["CFBundleVersion"] as? String ?? "?"))"
+        var header = ["IMPKT connection log",
+                      "app \(build), firmware in app \(Updater.bundledVersion), iOS \(UIDevice.current.systemVersion)",
+                      "bluetooth \(central.poweredOn ? "on" : "NOT on"), \(central.found.count) wrap(s) nearby"]
+        for w in central.found {
+            header.append("  nearby: \(w.name) \(ConnectionLog.short(w.id.uuidString)) \(w.rssi) dBm"
+                          + (w.inBootloader ? " IN UPDATE MODE" : "") + (w.connected ? " connected" : ""))
+        }
+        if let page = page {
+            for (word, h) in [("left", page.left), ("right", page.right)] {
+                header.append("  \(word) hand: \(h.on ? "on" : "off"), \"\(h.status)\", "
+                              + "wrap \(h.id.isEmpty ? "none" : ConnectionLog.short(h.id)), firmware \(h.fw.isEmpty ? "?" : h.fw)")
+            }
+            header.append("  page says: \(page.note ?? "")")
+        } else {
+            header.append("  page: not answering")
+        }
+        UIPasteboard.general.string = ConnectionLog.shared.text(header: header)
+        copiedLog = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copiedLog = false }
     }
 
     /// What the button beside a nearby wrap says. A wrap that is only being heard has not told
