@@ -70,18 +70,9 @@ final class Updater: NSObject, ObservableObject {
         return v.isEmpty ? nil : v
     }
 
-    /// True when `a` is a later release than `b`. Compared as numbers, field by field, so 2.9 is
-    /// older than 2.10, and false whenever either side is missing: an update is only offered
-    /// when the app can say why.
+    /// See FirmwareVersion, which holds the comparison so it can be tested on its own.
     static func isNewer(_ a: String, than b: String) -> Bool {
-        let x = a.split(separator: ".").compactMap { Int($0) }
-        let y = b.split(separator: ".").compactMap { Int($0) }
-        guard !x.isEmpty, !y.isEmpty else { return false }
-        for i in 0..<max(x.count, y.count) {
-            let p = i < x.count ? x[i] : 0, q = i < y.count ? y[i] : 0
-            if p != q { return p > q }
-        }
-        return false
+        FirmwareVersion.isNewer(a, than: b)
     }
 
     static var bundledVersion: String {

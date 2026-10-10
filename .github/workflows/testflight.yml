@@ -67,6 +67,11 @@ jobs:
           test -f IMPKT/Resources/firmware.zip  || { echo "the firmware package is missing: run ./sync-web.sh and commit it"; exit 1; }
           echo "firmware in this build: $(cat IMPKT/Resources/firmware-version.txt)"
 
+      # The version rules and the punch decoder, tested with the compiler alone. Fast, and it
+      # fails with a sentence about what broke rather than with a build log.
+      - name: App logic tests
+        run: ./tools/test-app-logic.sh
+
       # Compiles everything and resolves the Nordic package, with no certificate
       # and no Apple account involved. It runs before the signed build on purpose:
       # a syntax error and a missing credential look identical in an archive log,

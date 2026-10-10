@@ -88,7 +88,7 @@ struct DevicesView: View {
                                updater.phase == .connecting || updater.phase == .sending {
                                 ProgressView()
                             } else {
-                                Button(wrap.inBootloader ? "Finish update" : "Update") { confirming = wrap }
+                                Button(wrap.inBootloader ? "Finish update" : nearbyLabel(for: wrap)) { confirming = wrap }
                                     .font(.footnote)
                                     .disabled(updater.phase == .connecting || updater.phase == .sending)
                             }
@@ -339,6 +339,18 @@ struct DevicesView: View {
             }
         }
         .font(.footnote)
+    }
+
+    /// What the button beside a nearby wrap says. A wrap that is only being heard has not told
+    /// the app its version, so unless the page holds a link to it the button names the release it
+    /// would send and does not claim to be an update. Once connected, the wrap's own report decides:
+    /// a wrap already on the bundled release reads "Reinstall", never "Update".
+    private func nearbyLabel(for wrap: FoundWrap) -> String {
+        let reported = [page?.left, page?.right]
+            .compactMap { $0 }
+            .first { $0.on && $0.id.caseInsensitiveCompare(wrap.id.uuidString) == .orderedSame }?.fw ?? ""
+        return FirmwareVersion.action(bundled: Updater.bundledVersion, reported: reported)
+            .label(Updater.bundledVersion)
     }
 
     /// The page's own line for this hand, with the two live numbers after it. Both come
