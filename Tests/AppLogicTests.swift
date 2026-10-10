@@ -58,6 +58,9 @@ expect(ConnectionLog.outcome(ok: true, ["data": Data([1, 2, 3]).base64EncodedStr
 expect(ConnectionLog.outcome(ok: true, ["services": [["uuid": "6e2a0001-b5a3"], ["uuid": "0000180a-0000"]]])
        == "ok, services 6e2a0001,0000180a", "a connect logs the services it found")
 
+expect(ConnectionLog.outcome(ok: true, ["devices": [["id": "efe9e904-x", "present": true], ["id": "aa8dd53c-y", "present": false]]])
+       == "ok, 2 wrap(s), 1 heard now: efe9e904*,aa8dd53c", "the known list logs which wraps can be heard")
+
 print("the bundled firmware is the one on the sensor")
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let bundled = (try? String(contentsOf: root.appendingPathComponent("IMPKT/Resources/firmware-version.txt"), encoding: .utf8))?

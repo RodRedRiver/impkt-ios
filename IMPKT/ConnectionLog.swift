@@ -69,7 +69,12 @@ final class ConnectionLog {
                 let ids = s.compactMap { $0["uuid"] as? String }.map(short)
                 return "ok, services \(ids.joined(separator: ","))"
             }
-            if let list = out["devices"] as? [[String: Any]] { return "ok, \(list.count) wrap(s)" }
+            if let list = out["devices"] as? [[String: Any]] {
+                let heard = list.filter { $0["present"] as? Bool == true }.count
+                return "ok, \(list.count) wrap(s), \(heard) heard now: "
+                    + list.map { "\(short($0["id"] as? String ?? "?"))\($0["present"] as? Bool == true ? "*" : "")" }
+                          .joined(separator: ",")
+            }
             return "ok"
         }
         let name = out["name"] as? String ?? "Error"

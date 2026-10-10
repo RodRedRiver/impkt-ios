@@ -23,7 +23,7 @@ const expect = (ok, what) => { console.log((ok ? '  PASS  ' : '  FAIL  ') + what
 
 function run(memo, used) {
   const code = `const side = 'right'; const handMemo = ${JSON.stringify(memo)}; const inUse = d => ${JSON.stringify(used || [])}.includes(d.id);
-    ${hands} ${pickSrc} return { handOf, handNamed, pick };`;
+    ${hands} ${pickSrc} return { handOf, handNamed, pick, pickFrom };`;
   return new Function(code)();
 }
 
@@ -56,6 +56,18 @@ expect(k.pick([w, right]) === right, 'a wrap that states right beats a stale mem
 k = run({ 'wrap-1': 'right' });
 expect(k.pick([left, w]) === w, 'a remembered-right wrap beats a stale-left one');
 expect(run({}, ['wrap-1']).pick([w]) === undefined, 'a wrap already connected is not picked again');
+
+console.log('a wrap the phone can hear beats one it only remembers (the log from build 47)');
+const ghost = { id: 'aa8dd53c', name: 'Impkt 1', present: false };
+const real = { id: 'efe9e904', name: 'right test', present: true };
+k = run({ aa8dd53c: 'right' });
+expect(k.pickFrom([ghost, real]) === real, 'the advertising wrap is picked over a remembered one the memory says is right');
+k = run({ aa8dd53c: 'right', efe9e904: 'left' });
+expect(k.pickFrom([ghost, real]) === real, 'even when the memory of the real wrap is a stale left');
+k = run({ aa8dd53c: 'right' });
+expect(k.pickFrom([ghost]) === ghost, 'with nothing on the air, a remembered wrap is still tried');
+const browser = [{ id: 'x', name: 'BOXING-01R' }];
+expect(run({}).pickFrom(browser) === browser[0], 'in a browser, where nothing says present, the pick is unchanged');
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

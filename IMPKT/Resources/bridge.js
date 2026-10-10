@@ -255,6 +255,9 @@
     var d = devices[info.id];
     if (!d) d = devices[info.id] = new Device(info);
     if (info.name) d.name = info.name;
+    /* Whether the app can hear this wrap right now. Only the app knows; a browser's
+       devices never carry it, and the page treats missing as "cannot tell". */
+    if (typeof info.present === 'boolean') d.present = info.present;
     return d;
   }
 

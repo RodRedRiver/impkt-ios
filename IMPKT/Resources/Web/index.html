@@ -4518,11 +4518,16 @@
                          Connect said nothing was found. The wrap's own identity is read the moment
                          the link opens and settles it, and one that cannot say is put back below. */
                       || list.find(d => d && !inUse(d) && !handNamed(d));
+    /* A wrap that can be heard right now before one that is only remembered. In the app a
+       remembered wrap that is asleep, or an identifier the wrap no longer answers to, costs a
+       12 second wait and then fails, while the wrap in the pilot's hand is advertising. In a
+       browser nothing says `present`, so this is the same pick as before. */
+    const pickFrom = list => pick(list.filter(d => d && d.present === true)) || pick(list);
     /* Whatever the search has already turned up and no hand has claimed. */
     let device = pick(Array.from(FOUND.values()).map(f => f.device));
     /* Then whatever this browser has permission for, which is every wrap ever
        introduced here, dialog or no dialog, including in past sessions. */
-    if (!device) device = pick(await permitted());
+    if (!device) device = pickFrom(await permitted());
 
     if (!device) {
       wrapUI(side, '', 'Not connected');

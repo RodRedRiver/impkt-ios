@@ -426,6 +426,18 @@ final class WrapCentral: NSObject, ObservableObject {
                 var list = self.manager.retrievePeripherals(withIdentifiers: ids)
                 list += self.manager.retrieveConnectedPeripherals(
                     withServices: [WrapCentral.punchService])
+                // The wraps this phone can hear right now, first, and marked. Without them the page
+                // only had the remembered list, and a remembered identifier the wrap no longer
+                // answers to (a wrap that has been reflashed or replaced) was connected to for 12 s
+                // and timed out while the real wrap sat in the Nearby list advertising.
+                let heard = self.found.filter {
+                    !$0.inBootloader
+                        && ($0.connected || Date().timeIntervalSince($0.seen) < WrapCentral.staleAfter)
+                }.map { $0.id }
+                let present = Set(heard)
+                list += heard.compactMap { self.peripherals[$0] }
+                list = list.filter { present.contains($0.identifier) }
+                     + list.filter { !present.contains($0.identifier) }
                 var out: [[String: Any]] = []
                 var seen = Set<UUID>()
                 for p in list where !seen.contains(p.identifier) {
@@ -442,7 +454,8 @@ final class WrapCentral: NSObject, ObservableObject {
                         continue
                     }
                     self.peripherals[p.identifier] = p
-                    var d: [String: Any] = ["id": p.identifier.uuidString]
+                    var d: [String: Any] = ["id": p.identifier.uuidString,
+                                            "present": present.contains(p.identifier)]
                     if let n = self.advNames[p.identifier] ?? p.name { d["name"] = n }
                     out.append(d)
                 }
