@@ -56,3 +56,21 @@ enum FirmwareVersion {
         return isNewer(bundled, than: reported) ? .update : .replace
     }
 }
+
+/// The firmware each wrap last said it runs, kept per wrap so a wrap that is only being heard, and
+/// so has not told the app anything this session, is not offered an install as if its version were
+/// unknown. A connected wrap's own report always wins over this; it is only the fallback, and it is
+/// overwritten the next time the wrap speaks.
+enum FirmwareMemory {
+    private static func key(_ id: UUID) -> String { "impkt.fw.\(id.uuidString.lowercased())" }
+
+    static func remember(_ version: String, for id: UUID, in defaults: UserDefaults = .standard) {
+        let v = version.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !v.isEmpty else { return }
+        defaults.set(v, forKey: key(id))
+    }
+
+    static func recall(for id: UUID, in defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: key(id)) ?? ""
+    }
+}

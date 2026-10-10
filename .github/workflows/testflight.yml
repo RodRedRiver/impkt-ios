@@ -72,6 +72,11 @@ jobs:
       - name: App logic tests
         run: ./tools/test-app-logic.sh
 
+      # The page's own hand matching, run in Node: Connect on a hand has to find a wrap that
+      # has been renamed, and a stale remembered hand must not hide it.
+      - name: Page hand-matching test
+        run: node tools/test-page-hands.js
+
       # Compiles everything and resolves the Nordic package, with no certificate
       # and no Apple account involved. It runs before the signed build on purpose:
       # a syntax error and a missing credential look identical in an archive log,

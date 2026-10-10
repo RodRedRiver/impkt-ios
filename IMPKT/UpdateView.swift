@@ -263,6 +263,7 @@ extension Updater: DFUServiceDelegate {
         case .completed:
             phase = .done
             detail = "Updated. The wrap has restarted on the new firmware."
+            if let t = lastTarget { FirmwareMemory.remember(installing, for: t.id) }
             progress = 1
             controller = nil
             // Scanning was stopped for the duration so the two scans did not

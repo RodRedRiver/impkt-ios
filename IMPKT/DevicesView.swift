@@ -349,7 +349,8 @@ struct DevicesView: View {
         let reported = [page?.left, page?.right]
             .compactMap { $0 }
             .first { $0.on && $0.id.caseInsensitiveCompare(wrap.id.uuidString) == .orderedSame }?.fw ?? ""
-        return FirmwareVersion.action(bundled: Updater.bundledVersion, reported: reported)
+        let known = reported.isEmpty ? FirmwareMemory.recall(for: wrap.id) : reported
+        return FirmwareVersion.action(bundled: Updater.bundledVersion, reported: known)
             .label(Updater.bundledVersion)
     }
 
@@ -448,7 +449,14 @@ struct DevicesView: View {
 
     private func readPage() {
         PageControl.state { state in
-            if let state = state { self.page = state }
+            if let state = state {
+                self.page = state
+                // What each connected wrap says it runs, kept for the Nearby list, where a
+                // wrap that is only being heard cannot say it again.
+                for h in [state.left, state.right] where h.on && !h.fw.isEmpty {
+                    if let id = UUID(uuidString: h.id) { FirmwareMemory.remember(h.fw, for: id) }
+                }
+            }
             self.asked = true
         }
     }

@@ -25,6 +25,19 @@ expect(FirmwareVersion.action(bundled: "2.24", reported: "2.21").label("2.24") =
 expect(FirmwareVersion.action(bundled: "2.21", reported: "2.24") == .replace, "a wrap newer than the app is not called an update")
 expect(FirmwareVersion.action(bundled: "2.24", reported: "") == .install, "a wrap that has not said is not called an update")
 
+print("a wrap that is only being heard")
+let suite = UserDefaults(suiteName: "impkt.tests.\(UUID().uuidString)")!
+let wrapId = UUID()
+expect(FirmwareMemory.recall(for: wrapId, in: suite) == "", "a wrap never met has no remembered version")
+FirmwareMemory.remember("2.24", for: wrapId, in: suite)
+expect(FirmwareMemory.recall(for: wrapId, in: suite) == "2.24", "a version a wrap reported is remembered")
+expect(FirmwareVersion.action(bundled: "2.24", reported: FirmwareMemory.recall(for: wrapId, in: suite)).label("2.24") == "Reinstall 2.24",
+       "so its Nearby button no longer says Install 2.24 when it is on 2.24")
+FirmwareMemory.remember("", for: wrapId, in: suite)
+expect(FirmwareMemory.recall(for: wrapId, in: suite) == "2.24", "an empty report does not erase what was known")
+FirmwareMemory.remember("2.21", for: wrapId, in: suite)
+expect(FirmwareMemory.recall(for: wrapId, in: suite) == "2.21", "a newer report replaces the old one")
+
 print("the bundled firmware is the one on the sensor")
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let bundled = (try? String(contentsOf: root.appendingPathComponent("IMPKT/Resources/firmware-version.txt"), encoding: .utf8))?

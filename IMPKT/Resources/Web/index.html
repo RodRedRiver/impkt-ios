@@ -3720,11 +3720,13 @@
     catch (err) { /* private browsing: this session still knows, the next forgets */ }
   }
 
-  const handOf = d => {
+  /* The hand a wrap's NAME states, and nothing else. A wrap somebody has renamed states
+     none, so this is '' for "left 1" or "right test". */
+  const handNamed = d => {
     const m = /^BOXING-01\s*([LR])$/i.exec(((d && d.name) || '').trim());
-    if (m) return m[1].toUpperCase() === 'L' ? 'left' : 'right';
-    return (d && d.id && handMemo[d.id]) || '';
+    return m ? (m[1].toUpperCase() === 'L' ? 'left' : 'right') : '';
   };
+  const handOf = d => handNamed(d) || (d && d.id && handMemo[d.id]) || '';
   const otherHand = side => side === 'left' ? 'right' : 'left';
   const handWord = side => side === 'left' ? 'Left hand' : 'Right hand';
 
@@ -4508,7 +4510,14 @@
        this button doing nothing. A wrap that says nothing is still fair game,
        because that is what an older wrap always looks like. */
     const pick = list => list.find(d => d && !inUse(d) && handOf(d) === side)
-                      || list.find(d => d && !inUse(d) && !handOf(d));
+                      || list.find(d => d && !inUse(d) && !handOf(d))
+                      /* Last, a wrap whose hand is only this browser's memory of it. Once a wrap
+                         is renamed its name no longer says a hand, and the memory can be stale: it
+                         was written when the wrap was last put on the other hand, or before it
+                         was told. Refusing it here is how a right-hand wrap sat in the list and
+                         Connect said nothing was found. The wrap's own identity is read the moment
+                         the link opens and settles it, and one that cannot say is put back below. */
+                      || list.find(d => d && !inUse(d) && !handNamed(d));
     /* Whatever the search has already turned up and no hand has claimed. */
     let device = pick(Array.from(FOUND.values()).map(f => f.device));
     /* Then whatever this browser has permission for, which is every wrap ever
@@ -4520,6 +4529,13 @@
       return { ok: false, why: 'none found' };
     }
     if (!await connectWrap(side, device, null)) return { ok: false, why: 'refused' };
+    if (handOf(device) && handOf(device) !== side) {
+      const landed = sideOf(device);
+      if (landed && !(WRAPS[landed].ident && WRAPS[landed].ident.hand)) {
+        drop(landed, 'Not connected');
+        return { ok: false, why: 'none found' };
+      }
+    }
     /* One press, both hands. A pilot who reconnects one wrap wants the pair, not
        the one they happened to press, and the other hand costs nothing to bring
        up if it says which hand it is. Sweeping from here rather than from inside
