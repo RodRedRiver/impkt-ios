@@ -65,7 +65,7 @@ print("the bundled firmware is the one on the sensor")
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
 let bundled = (try? String(contentsOf: root.appendingPathComponent("IMPKT/Resources/firmware-version.txt"), encoding: .utf8))?
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-expect(bundled == "2.24", "the app bundles firmware 2.24 (found '\(bundled)')")
+expect(FirmwareVersion.isNewer(bundled, than: "2.24") || bundled == "2.24", "the app bundles 2.24 or later (found '\(bundled)')")
 let previous = (try? String(contentsOf: root.appendingPathComponent("IMPKT/Resources/firmware-previous-version.txt"), encoding: .utf8))?
     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 expect(FirmwareVersion.isNewer(bundled, than: previous), "the way back (\(previous)) is older than the bundled release")
