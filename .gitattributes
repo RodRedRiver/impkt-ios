@@ -1,0 +1,20 @@
+# What GitHub counts as this repository's language.
+#
+# The pilot page, its stylesheet, its fonts and the pilot list are copied in
+# from the website by sync-web.sh (a cp, not a build step), so they are
+# third-party to this repo: vendored, and left out of the language bar. What is
+# written here is the Swift, bridge.js and the tools.
+IMPKT/Resources/Web/**     linguist-vendored
+IMPKT/Resources/css/**     linguist-vendored
+IMPKT/Resources/fonts/**   linguist-vendored
+IMPKT/Resources/pilots.json linguist-vendored
+
+# HTML mirrors of the SwiftUI tabs, drawn by hand for tools/preview.py so the
+# screens can be looked at in a browser. Development aids, not app code.
+tools/preview-tabs.js      linguist-documentation
+tools/preview-tabs.css     linguist-documentation
+
+# Binaries: the DFU packages the app ships and the web fonts the page uses.
+*.zip   binary
+*.woff2 binary
+*.png   binary
