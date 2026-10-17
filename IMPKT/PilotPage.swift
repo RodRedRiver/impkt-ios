@@ -138,8 +138,24 @@ final class BundleFiles: NSObject, WKURLSchemeHandler {
             task.didFailWithError(URLError(.badURL)); return
         }
 
-        let wanted = root.appendingPathComponent(url.path).standardizedFileURL
-        guard wanted.path.hasPrefix(root.path),
+        // impkt://beta/ is the Beta tab, rooted at Resources/Beta: its own host, so its own
+        // origin, which keeps its storage apart from the page's and gives its router a root
+        // to stand on. Everything else is impkt://app/, rooted at Resources.
+        let isBeta = url.host == BetaPage.host
+        let base = isBeta ? root.appendingPathComponent("Beta") : root
+        var wanted = base.appendingPathComponent(url.path).standardizedFileURL
+        // The Beta app is a single page: /, /record and /history/123 are screens of it,
+        // not files, and its router reads the path to decide which. So a path there that
+        // is not a file is the page. Not a path with an extension, which is a missing asset
+        // and should say so with a 404 rather than arrive as HTML.
+        if isBeta, wanted.pathExtension.isEmpty {
+            var isFolder: ObjCBool = false
+            if !FileManager.default.fileExists(atPath: wanted.path, isDirectory: &isFolder)
+                || isFolder.boolValue {
+                wanted = base.appendingPathComponent("index.html")
+            }
+        }
+        guard wanted.path.hasPrefix(base.path),
               let data = try? Data(contentsOf: wanted) else {
             // 404 rather than an error: the page asks for a favicon that is not
             // bundled, and a failed task logs a warning on every load.

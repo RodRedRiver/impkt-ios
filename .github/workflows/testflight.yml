@@ -64,6 +64,7 @@ jobs:
       - name: Check the bundled resources are there
         run: |
           test -f IMPKT/Resources/Web/index.html || { echo "the pilot page is missing: run ./sync-web.sh and commit it"; exit 1; }
+          test -f IMPKT/Resources/Beta/index.html || { echo "the beta app is missing: run ./sync-beta.sh and commit it"; exit 1; }
           test -f IMPKT/Resources/firmware.zip  || { echo "the firmware package is missing: run ./sync-web.sh and commit it"; exit 1; }
           echo "firmware in this build: $(cat IMPKT/Resources/firmware-version.txt)"
 
@@ -184,7 +185,7 @@ jobs:
         run: |
           APP=build/IMPKT.xcarchive/Products/Applications/IMPKT.app
           fail=0
-          for f in Web/index.html css/pilot.css pilots.json firmware.zip bridge.js; do
+          for f in Web/index.html css/pilot.css pilots.json firmware.zip bridge.js Beta/index.html; do
             if [ -f "$APP/$f" ]; then
               echo "ok   $f"
             else

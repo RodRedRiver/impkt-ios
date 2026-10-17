@@ -27,6 +27,7 @@ targets:
           - "Resources/Web"
           - "Resources/css"
           - "Resources/fonts"
+          - "Resources/Beta"
       # Folder references, not groups. A group flattens its contents into the
       # bundle root, so css/pilot.css would arrive as pilot.css and the page's
       # own ../css/pilot.css would find nothing. The page's paths are the
@@ -36,6 +37,10 @@ targets:
       - path: IMPKT/Resources/css
         type: folder
       - path: IMPKT/Resources/fonts
+        type: folder
+      # The Beta tab's app, built from beta/ by sync-beta.sh. A folder for the same
+      # reason as Web: its pages ask for /Beta/assets/..., and a group would flatten that.
+      - path: IMPKT/Resources/Beta
         type: folder
     dependencies:
       - package: NordicDFU

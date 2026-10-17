@@ -102,8 +102,9 @@ extension View {
     }
 }
 
-/// Five tabs. The first one is the page, which is still the product; the other four
-/// are each a job the page cannot do from inside a web view.
+/// Five tabs. The first one is the page, which is still the product. Beta is the next
+/// app, on the same wraps, for the people testing it; the other three are each a job the
+/// page cannot do from inside a web view.
 ///
 /// Leaderboard is one band, a queue of people and the hardest punch of the session,
 /// which is what a gym asks for within a minute of being handed a band and is a
@@ -117,7 +118,7 @@ struct RootView: View {
     /// change it: the page asks for Devices when there is no wrap to run a drill with.
     @State private var tab = 0
 
-    private static let tabs = ["test": 0, "leaderboard": 1, "devices": 2, "profile": 3]
+    private static let tabs = ["test": 0, "beta": 1, "leaderboard": 2, "devices": 3, "profile": 4]
 
     var body: some View {
         TabView(selection: $tab) {
@@ -132,17 +133,24 @@ struct RootView: View {
                 .tabItem { Label("Test", systemImage: "figure.boxing") }
                 .tag(0)
 
+            // Its own dark ground rather than the canvas: it is a dark app, and the light
+            // bands either side of it would be the borders all over again.
+            BetaPage()
+                .background(Color(red: 0x0B / 255, green: 0x0C / 255, blue: 0x10 / 255))
+                .tabItem { Label("Beta", systemImage: "flask") }
+                .tag(1)
+
             LeaderboardView()
                 .tabItem { Label("Leaderboard", systemImage: "trophy") }
-                .tag(1)
+                .tag(2)
 
             DevicesView()
                 .tabItem { Label("Devices", systemImage: "dot.radiowaves.left.and.right") }
-                .tag(2)
+                .tag(3)
 
             ProfileView()
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
-                .tag(3)
+                .tag(4)
         }
         .tint(.impktRed)
         .onReceive(NotificationCenter.default.publisher(for: .impktOpenTab)) { note in

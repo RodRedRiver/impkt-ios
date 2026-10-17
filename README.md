@@ -12,11 +12,12 @@ Nordic-based boards running the Adafruit bootloader. Their pilot page,
 `impktband.com/test`, is an ordinary web page that talks to the wraps through
 Web Bluetooth. iOS has no Web Bluetooth, so this app is that page inside a
 `WKWebView` with a real radio supplied underneath it, plus the three jobs a web
-page cannot do on a phone. Four tabs:
+page cannot do on a phone, and a Beta tab for the next app. Five tabs:
 
 | Tab | What it does | Source |
 | --- | --- | --- |
 | **Test** | The pilot page, unmodified, served from the bundle over the app's own `impkt://` URL scheme so relative paths and `fetch` work as they do on the site. `bridge.js` is injected at document start and implements the part of `navigator.bluetooth` the page uses (`getDevices`, `requestDevice`, `requestLEScan`, `watchAdvertisements`, `connect`, `getPrimaryService`, `getCharacteristic`, `startNotifications`, `readValue`, `writeValue`) by messaging the Swift side. | `PilotPage.swift`, `Resources/bridge.js` |
+| **Beta** | The next IMPKT app (Train, Session, History, Settings), built in Lovable and bundled as a single-page app at `impkt://beta/`. It gets no Bluetooth of its own: like the Leaderboard it is handed every punch off the Test tab's link, and its Connect asks the page to connect the wraps, the way Devices does. Each punch arrives with the firmware's power score, peak g, hand speed and which hand threw it. Sessions are kept in its own `localStorage`. Source in `beta/`. | `BetaPage.swift`, `beta/src/lib/band.ts` |
 | **Leaderboard** | One band passed down a queue of people in a gym: a name is typed, the best punch of the turn goes on the board, with the left/right split and the hand speed of the best punch. Reads punches off the notifications the page is already receiving, so it never competes for the radio. Standings persist across launches and can be shared as plain text. | `Leaderboard.swift`, `LeaderboardView.swift` |
 | **Devices** | Connect or disconnect each hand (by asking the page, which owns the links), a Nearby list sorted by signal strength, the wraps this phone remembers, and firmware updates. A connection log of every Bluetooth step and its answer can be copied off the screen. | `DevicesView.swift`, `PageControl.swift`, `ConnectionLog.swift` |
 | **Profile** | What the page has stored (name, code, measurements, which wrap is on which hand, drills waiting to upload), read from the page's own `localStorage` through the web view rather than kept twice, and the privacy policy. | `ProfileView.swift`, `PageStorage.swift`, `PrivacyPolicyView.swift` |
@@ -27,6 +28,8 @@ flowchart LR
     page[Test tab<br/>pilot page in WKWebView] -- bridge.js ops --> central[WrapCentral<br/>one CBCentralManager]
     central -- advertisements, notifications --> page
     lb[Leaderboard] -. taps lastPunch .- central
+    beta[Beta tab<br/>beta app in WKWebView] -. taps lastPunch .- central
+    beta -- connect via PageControl --> page
     dev[Devices / Profile] -- PageControl, PageStorage --> page
     dev --> upd[Updater<br/>NordicDFU]
     upd -- takeRadio, releaseAll --> central
@@ -98,12 +101,15 @@ and worth a screen of its own.
    (plus the release before it) out of the firmware build folder. Paths are
    overridable with `PAGE=` and `FW_DIR=`. The copies are committed, so a fresh
    clone builds without either.
-3. `brew install xcodegen && xcodegen generate`, then open `IMPKT.xcodeproj`.
+3. `./sync-beta.sh` builds the Beta tab's app out of `beta/` (`npm run build:app`)
+   into `IMPKT/Resources/Beta`. Also committed; run it after changing anything in
+   `beta/`.
+4. `brew install xcodegen && xcodegen generate`, then open `IMPKT.xcodeproj`.
    `project.yml` is the project: iOS 16 deployment target, the `NordicDFU`
    package from 4.15.0, and `Web/`, `css/`, `fonts/` added as folder references
    so the page's relative paths survive into the bundle.
-4. Pick your team under Signing & Capabilities.
-5. Run it on a real iPhone. The simulator has no Bluetooth radio and will find
+5. Pick your team under Signing & Capabilities.
+6. Run it on a real iPhone. The simulator has no Bluetooth radio and will find
    nothing, which looks like a bug and is not one.
 
 ### Tests
