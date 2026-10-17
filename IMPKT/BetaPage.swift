@@ -31,11 +31,18 @@ struct BetaPage: UIViewRepresentable {
 
         let web = WKWebView(frame: .zero, configuration: config)
         web.allowsBackForwardNavigationGestures = false
-        // The beta app's own dark ground, so nothing white flashes before it paints.
-        web.isOpaque = false
-        web.backgroundColor = UIColor(red: 0x0B / 255, green: 0x0C / 255, blue: 0x10 / 255, alpha: 1)
-        web.scrollView.backgroundColor = web.backgroundColor
-        web.scrollView.alwaysBounceVertical = false
+        // White, which is where the welcome starts, so entering the beta is one surface
+        // turning into the next rather than a flash of something else first.
+        web.backgroundColor = .white
+        web.scrollView.backgroundColor = .white
+        // The page draws under the clock and the home indicator and keeps its own content
+        // clear of them with env(safe-area-inset-*). Left to adjust, the scroll view would
+        // add the insets a second time and the page would sit in a frame again.
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        // No rubber band. Dragging a screen past its end pulled the whole page away from
+        // its background and showed the edge of it, which is what made the beta look like
+        // a web page in a box. Its screens scroll; they do not bounce.
+        web.scrollView.bounces = false
         #if DEBUG
         if #available(iOS 16.4, *) { web.isInspectable = true }
         #endif
@@ -62,8 +69,8 @@ struct BetaPage: UIViewRepresentable {
 ///
 /// Up into the page: `window.__impktBeta.punch` for every punch, and
 /// `window.__impktBeta.state` with what is connected, pushed on a timer and after every
-/// connect. Down from it: `connect`, `disconnect`, `hello` and `openTab`, each answered
-/// through `window.__impktBeta.reply`. src/lib/band.ts in beta/ is the other end.
+/// connect. Down from it: `connect`, `disconnect` and `hello`, each answered through
+/// `window.__impktBeta.reply`, and `openTab` and `exitBeta`, which nothing waits on. src/lib/band.ts in beta/ is the other end.
 final class BetaBridge: NSObject, WKScriptMessageHandler {
 
     private weak var web: WKWebView?
@@ -97,6 +104,10 @@ final class BetaBridge: NSObject, WKScriptMessageHandler {
               let op = body["op"] as? String else { return }
         let args = body["args"] as? [String: Any] ?? [:]
 
+        if op == "exitBeta" {
+            NotificationCenter.default.post(name: .impktExitBeta, object: nil)
+            return
+        }
         if op == "openTab" {
             NotificationCenter.default.post(name: .impktOpenTab, object: nil,
                                             userInfo: ["tab": (args["tab"] as? String) ?? ""])

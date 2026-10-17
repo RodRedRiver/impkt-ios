@@ -24,7 +24,7 @@ import {
   sessionTitle,
   WORKOUTS,
 } from "@/lib/impkt";
-import bandImg from "@/assets/sensor-box.png";
+import bandImg from "@/assets/band-model.webp";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -113,8 +113,11 @@ function TrainPage() {
       : bandLabel(band);
 
   return (
-    <div className="train-light-screen relative flex min-h-[100dvh] flex-col overflow-hidden px-5 pb-40 pt-6 text-foreground">
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+    <div className="relative flex min-h-[100dvh] flex-col overflow-x-hidden px-5 pb-40 pt-6 text-foreground">
+      {/* Fixed, behind everything: the light ground and its pearls stay where they are and
+          the screen moves over them, which is what makes it read as one surface rather than
+          a page with an edge. */}
+      <div aria-hidden className="train-light-screen pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className="train-pearl-a animate-pearl-drift absolute -left-[24%] -top-[14%] h-[62%] w-[82%] rounded-full blur-2xl" />
         <div className="train-pearl-b animate-pearl-drift absolute -right-[28%] top-[24%] h-[56%] w-[72%] rounded-full blur-3xl [animation-delay:-8s]" />
         <div className="train-pearl-wash absolute inset-0" />
@@ -185,10 +188,10 @@ function TrainPage() {
         />
         <img
           src={bandImg}
-          alt="Matte black IMPKT BOXING-01 sensor module with two magnetic pogo pins"
-          width={1024}
-          height={1024}
-          className="mx-auto w-full drop-shadow-[0_26px_36px_rgba(40,45,55,0.28)]"
+          alt="The IMPKT wrap, see-through, with its sensor board and battery inside"
+          width={968}
+          height={1129}
+          className="mx-auto w-[86%] drop-shadow-[0_26px_36px_rgba(40,45,55,0.22)]"
         />
       </div>
 

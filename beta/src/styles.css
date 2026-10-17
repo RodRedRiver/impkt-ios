@@ -499,3 +499,108 @@ html.reduce-motion .animate-pearl-drift,
 html.reduce-motion .animate-white-pulse {
   animation: none;
 }
+
+/* ---------- beta welcome ----------
+ * The Test tab's name arrival (.name .ch in its index.html), restated: same easing, same
+ * per-letter rise out of a blur, same five-stop ramp. See BetaWelcome.tsx. */
+.bw {
+  --bw-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --bw-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, oklch(1 0 0) 0%, oklch(0.98 0.004 255) 55%, oklch(0.95 0.008 255) 100%);
+  transition: opacity 0.7s var(--bw-ease-smooth);
+}
+.bw.bw-out {
+  opacity: 0;
+  pointer-events: none;
+}
+.bw-word {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  color: #9b1830;
+  transition:
+    transform 0.7s var(--bw-ease),
+    filter 0.7s var(--bw-ease-smooth);
+}
+.bw-out .bw-word {
+  transform: scale(1.04);
+  filter: blur(6px);
+}
+.bw-line {
+  display: block;
+}
+.bw-sp {
+  display: inline-block;
+  width: 0.26em;
+}
+.bw-ch {
+  display: inline-block;
+  transform: translateY(0.34em) scale(0.965);
+  opacity: 0;
+  filter: blur(14px);
+  transition:
+    transform 1.15s var(--bw-ease),
+    opacity 0.95s var(--bw-ease-smooth),
+    filter 0.95s var(--bw-ease-smooth);
+}
+.bw-ch.in {
+  transform: none;
+  opacity: 1;
+  filter: blur(0);
+}
+@supports ((background-clip: text) or (-webkit-background-clip: text)) {
+  .bw-ch {
+    background-image: linear-gradient(
+      to right,
+      #ffce7a 0%,
+      #ff9a4d 16%,
+      #f4514e 44%,
+      #d6203c 70%,
+      #c41e3a 100%
+    );
+    background-repeat: no-repeat;
+    background-size: var(--ramp-w, 100%) 100%;
+    background-position: var(--ramp-x, 0px) 0;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+@media (prefers-contrast: more) {
+  .bw-ch {
+    background: none;
+    color: #9b1830;
+  }
+}
+.bw-note {
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  color: oklch(0.5 0.008 255);
+  opacity: 0;
+  transform: translateY(6px);
+  transition:
+    opacity 0.9s var(--bw-ease-smooth) 1.4s,
+    transform 0.9s var(--bw-ease) 1.4s;
+}
+.bw-note.in {
+  opacity: 1;
+  transform: none;
+}
+.bw-reduced .bw-ch,
+.bw-reduced .bw-note,
+.bw-reduced .bw-word {
+  transform: none;
+  filter: none;
+  transition: opacity 0.4s linear;
+}

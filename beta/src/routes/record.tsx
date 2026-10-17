@@ -153,7 +153,7 @@ function RecordPage() {
   endRef.current = end;
 
   return (
-    <div className="flex min-h-screen flex-col px-5 pb-8 pt-12">
+    <div className="flex min-h-[calc(100dvh-env(safe-area-inset-top))] flex-col px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-12">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <span

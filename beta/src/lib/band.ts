@@ -362,6 +362,11 @@ export async function disconnectBand(): Promise<void> {
   }
 }
 
+/** Leaves the beta and goes back to the current app. No-op in a browser. */
+export function exitBeta() {
+  appHandler()?.postMessage({ op: "exitBeta", args: {} });
+}
+
 /** Shows one of the app's own tabs: "test", "devices" and so on. No-op in a browser. */
 export function openAppTab(tab: string) {
   appHandler()?.postMessage({ op: "openTab", args: { tab } });

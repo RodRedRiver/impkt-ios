@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Moon, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
+import { exitBeta, IN_APP } from "@/lib/band";
 import { clearSessions } from "@/lib/impkt";
 import { useSettings } from "@/lib/settings";
 
@@ -185,6 +186,22 @@ function SettingsPage() {
           <p className="mt-2 text-center text-xs text-muted-foreground">All sessions removed.</p>
         ) : null}
       </div>
+
+      {IN_APP ? (
+        <div className="glass mt-3 p-4">
+          <div className="label-xs mb-1">Beta test</div>
+          <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+            You're using the beta of the next IMPKT app. Leaving takes you back to the
+            current app. Your sessions here stay saved for next time.
+          </p>
+          <button
+            onClick={exitBeta}
+            className="w-full rounded-full border border-border py-3 text-sm font-medium"
+          >
+            Leave beta
+          </button>
+        </div>
+      ) : null}
 
       <div className="glass mt-3 p-4 text-xs leading-relaxed text-muted-foreground">
         <div className="label-xs mb-2">Terms & Privacy</div>

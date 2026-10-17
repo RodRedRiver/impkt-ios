@@ -18,6 +18,7 @@ import { SettingsProvider } from "../lib/settings";
 import { Toaster } from "../components/ui/sonner";
 import { UpdateWatcher } from "../components/UpdateWatcher";
 import { IN_APP } from "../lib/band";
+import { BetaWelcome } from "../components/BetaWelcome";
 
 function NotFoundComponent() {
   return (
@@ -240,9 +241,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <SettingsProvider>
-        <div className="bloom" aria-hidden />
+        {/* Train paints its own light ground; the dark bloom would tint it. */}
+        {pathname === "/" ? null : <div className="bloom" aria-hidden />}
         <div className={pathname === "/" ? "train-light-shell mx-auto flex min-h-screen w-full max-w-md flex-col" : "mx-auto flex min-h-screen w-full max-w-md flex-col"}>
-          <main className={immersive ? "flex-1" : "flex-1 pb-28"}>
+          <main className={immersive ? "flex-1 pt-[env(safe-area-inset-top)]" : "flex-1 pb-28 pt-[env(safe-area-inset-top)]"}>
             {/* Required: nested routes render here. */}
             <Outlet />
           </main>
@@ -266,6 +268,7 @@ function RootComponent() {
           )}
         </div>
         <Toaster position="top-center" />
+        {IN_APP ? <BetaWelcome /> : null}
         {/* The app ships a new copy of this page with each build, and has no server to poll. */}
         {IN_APP ? null : <UpdateWatcher />}
       </SettingsProvider>

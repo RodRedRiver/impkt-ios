@@ -102,9 +102,10 @@ extension View {
     }
 }
 
-/// Five tabs. The first one is the page, which is still the product. Beta is the next
-/// app, on the same wraps, for the people testing it; the other three are each a job the
-/// page cannot do from inside a web view.
+/// Four tabs and a door. The first tab is the page, which is still the product; the
+/// other three are each a job the page cannot do from inside a web view. Beta, in the
+/// middle of the bar, is the door: it opens the next app, on the same wraps, full screen
+/// for the people testing it. See `betaMode`.
 ///
 /// Leaderboard is one band, a queue of people and the hardest punch of the session,
 /// which is what a gym asks for within a minute of being handed a band and is a
@@ -118,10 +119,30 @@ struct RootView: View {
     /// change it: the page asks for Devices when there is no wrap to run a drill with.
     @State private var tab = 0
 
-    private static let tabs = ["test": 0, "beta": 1, "leaderboard": 2, "devices": 3, "profile": 4]
+    /// Beta mode: the next app, full screen, over everything else.
+    ///
+    /// Not a tab. The beta app has its own bar along the bottom, and a tab of it sat on top
+    /// of this one, two bars stacked. So the Beta item in the bar is a door rather than a
+    /// place: pressing it covers the app with the beta, and the way out is the beta's own
+    /// Settings, which is where a tester looks for it. Remembered across launches, so a
+    /// tester who closed the app in the beta opens it in the beta.
+    ///
+    /// The tabs stay alive underneath, and have to: the Test tab's page holds the link to
+    /// the wraps, and the beta's punches come off that link.
+    @AppStorage("impkt.betaMode") private var betaMode = false
+
+    private static let tabs = ["test": 0, "leaderboard": 2, "devices": 3, "profile": 4]
+
+    /// The bar's selection, with the Beta item turned into entering beta mode. The tab on
+    /// screen does not change, so leaving the beta lands back where it was entered from.
+    private var selection: Binding<Int> {
+        Binding(get: { tab }, set: { next in
+            if next == 1 { betaMode = true } else { tab = next }
+        })
+    }
 
     var body: some View {
-        TabView(selection: $tab) {
+        TabView(selection: selection) {
             // Inside the safe area, top and bottom, so nothing the page draws slides
             // under the clock or behind the tab bar. What that leaves is a band above
             // the page and a band below it, and both are painted the page's own
@@ -133,10 +154,8 @@ struct RootView: View {
                 .tabItem { Label("Test", systemImage: "figure.boxing") }
                 .tag(0)
 
-            // Its own dark ground rather than the canvas: it is a dark app, and the light
-            // bands either side of it would be the borders all over again.
-            BetaPage()
-                .background(Color(red: 0x0B / 255, green: 0x0C / 255, blue: 0x10 / 255))
+            // Never on screen: choosing it enters beta mode instead. See `selection`.
+            Color.pageCanvas
                 .tabItem { Label("Beta", systemImage: "flask") }
                 .tag(1)
 
@@ -153,10 +172,22 @@ struct RootView: View {
                 .tag(4)
         }
         .tint(.impktRed)
+        // Edge to edge, under the clock and the home indicator, so it is one surface
+        // rather than a page in a frame. The beta app keeps its own content clear of both.
+        .fullScreenCover(isPresented: $betaMode) {
+            BetaPage().ignoresSafeArea()
+        }
         .onReceive(NotificationCenter.default.publisher(for: .impktOpenTab)) { note in
-            if let name = note.userInfo?["tab"] as? String, let index = RootView.tabs[name] {
+            guard let name = note.userInfo?["tab"] as? String else { return }
+            if name == "beta" { betaMode = true; return }
+            if let index = RootView.tabs[name] {
+                // A tab is under the beta, so asking for one is asking to leave it.
+                betaMode = false
                 tab = index
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .impktExitBeta)) { _ in
+            betaMode = false
         }
     }
 }
@@ -164,4 +195,6 @@ struct RootView: View {
 extension Notification.Name {
     /// The page asking the app to show one of its tabs. userInfo["tab"] is "devices", "profile" and so on.
     static let impktOpenTab = Notification.Name("impkt.openTab")
+    /// The beta app's Leave beta, from its Settings.
+    static let impktExitBeta = Notification.Name("impkt.exitBeta")
 }
